@@ -1,11 +1,11 @@
-# Alaska HRRR REFC Radar Viewer
+# Alaska Radar Viewer
 
-A GitHub Pages application that displays Alaska HRRR (High-Resolution Rapid Refresh) REFC (Composite Reflectivity) radar data on an interactive Leaflet map.
+A GitHub Pages application that displays real-time Alaska radar data (NEXRAD composite reflectivity) on an interactive Leaflet map.
 
 ## Features
 
 - Interactive map centered on Alaska
-- Real-time radar imagery overlay
+- Real-time NEXRAD radar imagery overlay
 - Auto-refresh every 5 minutes
 - Manual refresh button
 - Toggle overlay visibility
@@ -13,7 +13,7 @@ A GitHub Pages application that displays Alaska HRRR (High-Resolution Rapid Refr
 
 ## Data Source
 
-The application fetches radar data from NOAA NowCOAST service, with fallback to Iowa Environmental Mesonet NEXRAD imagery.
+The application uses Iowa Environmental Mesonet's NEXRAD composite reflectivity (N0Q product) which provides real-time radar coverage for Alaska and the continental United States, with RainViewer as a fallback.
 
 ## Deployment
 

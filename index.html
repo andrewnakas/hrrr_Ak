@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Alaska HRRR REFC Radar</title>
+    <title>Alaska Radar Viewer</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body {
@@ -85,10 +85,10 @@
 <body>
     <div id="map"></div>
     <div class="info-panel">
-        <h3>Alaska HRRR REFC Radar</h3>
-        <p><strong>Model:</strong> HRRR Alaska</p>
-        <p><strong>Parameter:</strong> Composite Reflectivity</p>
-        <p><strong>Forecast Hour:</strong> F000 (Analysis)</p>
+        <h3>Alaska Radar Viewer</h3>
+        <p><strong>Data:</strong> NEXRAD Composite Reflectivity</p>
+        <p><strong>Coverage:</strong> Real-time Alaska & CONUS</p>
+        <p><strong>Product:</strong> Base Reflectivity (N0Q)</p>
         <p id="status">Loading...</p>
         <div class="controls">
             <button id="refresh" onclick="refreshData()">Refresh</button>
@@ -148,62 +148,20 @@
             const refreshBtn = document.getElementById('refresh');
 
             try {
-                statusEl.textContent = 'Fetching latest HRRR data...';
+                statusEl.textContent = 'Fetching latest radar data...';
                 refreshBtn.disabled = true;
-
-                // Get current UTC time
-                const now = new Date();
-                let hours = now.getUTCHours();
-
-                // HRRR data has a delay, try 1-2 hours behind
-                hours = Math.max(0, hours - 1);
-
-                // Format date for tile services
-                const year = now.getUTCFullYear();
-                const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-                const day = String(now.getUTCDate()).padStart(2, '0');
-                const hour = String(hours).padStart(2, '0');
-
-                const runDate = `${year}${month}${day}`;
 
                 if (radarOverlay) {
                     map.removeLayer(radarOverlay);
                 }
 
-                // Try multiple HRRR data sources in order of preference
-                // Option 1: Iowa State Mesonet HRRR Alaska composite reflectivity
-                let tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-ak-composite-${runDate}${hour}00/{z}/{x}/{y}.png`;
+                // Use Iowa Environmental Mesonet NEXRAD composite
+                // This provides real-time radar coverage for all of North America including Alaska
+                const nexradUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
 
-                // Test if the URL is accessible by trying a few recent hours
-                let dataFound = false;
-                for (let hourOffset = 0; hourOffset < 6; hourOffset++) {
-                    const testHour = Math.max(0, hours - hourOffset);
-                    const testHourStr = String(testHour).padStart(2, '0');
-                    const testUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-ak-composite-${runDate}${testHourStr}00/{z}/{x}/{y}.png`;
-
-                    try {
-                        // Try to load a sample tile to verify data availability
-                        const response = await fetch(testUrl.replace('{z}', '5').replace('{x}', '5').replace('{y}', '10'), { method: 'HEAD' });
-                        if (response.ok) {
-                            tileUrl = testUrl;
-                            dataFound = true;
-                            statusEl.innerHTML = `HRRR Alaska data from ${runDate} ${testHourStr}:00 UTC<br><small>Source: Iowa Mesonet</small>`;
-                            break;
-                        }
-                    } catch (e) {
-                        // Continue to next hour
-                    }
-                }
-
-                if (!dataFound) {
-                    // Fall back to general HRRR composite (CONUS, but may show some Alaska data)
-                    tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-composite-${runDate}${hour}00/{z}/{x}/{y}.png`;
-                    statusEl.innerHTML = `HRRR data from ${runDate} ${hour}:00 UTC<br><small>Source: Iowa Mesonet (CONUS)</small>`;
-                }
-
-                radarOverlay = L.tileLayer(tileUrl, {
+                radarOverlay = L.tileLayer(nexradUrl, {
                     opacity: 0.7,
-                    attribution: 'Iowa Environmental Mesonet / NOAA HRRR',
+                    attribution: 'Iowa Environmental Mesonet - NEXRAD',
                     maxZoom: 10,
                     tileSize: 256
                 });
@@ -212,18 +170,19 @@
                     radarOverlay.addTo(map);
                 }
 
-            } catch (error) {
-                console.error('Error fetching HRRR data:', error);
-                statusEl.innerHTML = `<span style="color: orange;">Using NEXRAD radar (real-time)</span>`;
+                const timestamp = new Date().toUTCString();
+                statusEl.innerHTML = `Real-time NEXRAD radar<br><small>Updated: ${timestamp}</small>`;
 
-                // Fallback to RainViewer radar (real-time, global coverage including Alaska)
+            } catch (error) {
+                console.error('Error fetching radar data:', error);
+                statusEl.innerHTML = `<span style="color: red;">Error loading radar data</span>`;
+
+                // Fallback to RainViewer
                 if (radarOverlay) {
                     map.removeLayer(radarOverlay);
                 }
 
-                // RainViewer provides real-time radar
-                const timestamp = Math.floor(Date.now() / 1000);
-                const rainviewerUrl = `https://tilecache.rainviewer.com/v2/radar/${timestamp}/256/{z}/{x}/{y}/2/1_1.png`;
+                const rainviewerUrl = 'https://tilecache.rainviewer.com/v2/radar/nowcast/256/{z}/{x}/{y}/2/1_1.png';
 
                 radarOverlay = L.tileLayer(rainviewerUrl, {
                     opacity: 0.6,
