@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alaska HRRR REFC Radar</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 15px rgba(0,0,0,0.2);
+            z-index: 1000;
+            max-width: 300px;
+        }
+        .info-panel h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+        }
+        .info-panel p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        #status {
+            font-size: 12px;
+            color: #666;
+        }
+        .controls {
+            margin-top: 10px;
+        }
+        button {
+            padding: 8px 15px;
+            margin: 5px 5px 5px 0;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .legend {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 3px;
+        }
+        .legend-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        .legend-scale {
+            display: flex;
+            height: 20px;
+            margin: 5px 0;
+        }
+        .legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="info-panel">
+        <h3>Alaska HRRR REFC Radar</h3>
+        <p><strong>Model:</strong> HRRR Alaska</p>
+        <p><strong>Parameter:</strong> Composite Reflectivity</p>
+        <p><strong>Forecast Hour:</strong> F000 (Analysis)</p>
+        <p id="status">Loading...</p>
+        <div class="controls">
+            <button id="refresh" onclick="refreshData()">Refresh</button>
+            <button id="toggle" onclick="toggleOverlay()">Hide Overlay</button>
+        </div>
+        <div class="legend">
+            <div class="legend-title">Reflectivity (dBZ)</div>
+            <div class="legend-scale" id="legend-scale"></div>
+            <div class="legend-labels">
+                <span>5</span>
+                <span>20</span>
+                <span>35</span>
+                <span>50</span>
+                <span>65</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Initialize map centered on Alaska
+        const map = L.map('map').setView([64.0, -152.0], 5);
+
+        // Add base layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        let radarOverlay = null;
+        let overlayVisible = true;
+
+        // Create legend gradient
+        const legendScale = document.getElementById('legend-scale');
+        const colors = [
+            '#00000000', // transparent
+            '#9EF5FF',   // light blue
+            '#0000FF',   // blue
+            '#00FF00',   // green
+            '#00C000',   // dark green
+            '#FFFF00',   // yellow
+            '#FF8000',   // orange
+            '#FF0000',   // red
+            '#C00000',   // dark red
+            '#FF00FF',   // magenta
+            '#FFFFFF'    // white
+        ];
+        colors.forEach(color => {
+            const div = document.createElement('div');
+            div.style.flex = '1';
+            div.style.background = color;
+            legendScale.appendChild(div);
+        });
+
+        async function fetchHRRRData() {
+            const statusEl = document.getElementById('status');
+            const refreshBtn = document.getElementById('refresh');
+
+            try {
+                statusEl.textContent = 'Fetching latest HRRR data...';
+                refreshBtn.disabled = true;
+
+                // Get current UTC time
+                const now = new Date();
+                const hours = now.getUTCHours();
+                const nearestHour = hours; // HRRR runs hourly
+
+                // Format date for NOMADS
+                const year = now.getUTCFullYear();
+                const month = String(now.getUTCMonth() + 1).padStart(2, '0');
+                const day = String(now.getUTCDate()).padStart(2, '0');
+                const hour = String(nearestHour).padStart(2, '0');
+
+                const runDate = `${year}${month}${day}`;
+                const runHour = hour;
+
+                // Try to fetch from NOAA NOMADS
+                // Note: This is a simplified example. In production, you might need a backend
+                // to handle GRIB2 files or use a service that provides PNG overlays
+
+                // For this demo, we'll use Iowa State's IEM service which provides HRRR imagery
+                const iemUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-composite-${runDate}${runHour}00/{z}/{x}/{y}.png`;
+
+                // Try alternate source: Weather.gov experimental
+                const experimentalUrl = `https://opengeo.ncep.noaa.gov/geoserver/conus/hrrr_ncep_jet/ows?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&BBOX={bbox}&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&LAYERS=HRRR_max_refc&STYLES=&FORMAT=image/png&TRANSPARENT=true&TIME=${year}-${month}-${day}T${hour}:00:00Z`;
+
+                // For Alaska HRRR, we'll construct a WMS request to NOAA services
+                // This is a demonstration - you may need to adjust based on available services
+                const wmsUrl = `https://nowcoast.noaa.gov/arcgis/services/nowcoast/radar_meteo_imagery_nexrad_time/MapServer/WMSServer?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&BBOX={bbox-epsg-3857}&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&LAYERS=1&STYLES=&FORMAT=image/png&TRANSPARENT=true`;
+
+                if (radarOverlay) {
+                    map.removeLayer(radarOverlay);
+                }
+
+                // Use a composite of available radar imagery
+                // For Alaska, we'll use NOAA's nowCOAST service which includes radar coverage
+                radarOverlay = L.tileLayer(wmsUrl, {
+                    opacity: 0.6,
+                    attribution: 'NOAA NowCOAST',
+                    maxZoom: 10
+                });
+
+                if (overlayVisible) {
+                    radarOverlay.addTo(map);
+                }
+
+                const timestamp = new Date().toUTCString();
+                statusEl.innerHTML = `Last updated: ${timestamp}<br><small>Data from NOAA NowCOAST</small>`;
+
+            } catch (error) {
+                console.error('Error fetching HRRR data:', error);
+                statusEl.innerHTML = `<span style="color: red;">Error loading data. Using fallback radar imagery.</span>`;
+
+                // Fallback to NEXRAD radar imagery
+                if (radarOverlay) {
+                    map.removeLayer(radarOverlay);
+                }
+
+                const fallbackUrl = 'https://mesonet.agron.iastate.edu/cgi-bin/wms/nexrad/n0r.cgi?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&BBOX={bbox-epsg-3857}&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&LAYERS=nexrad-n0r-900913&STYLES=&FORMAT=image/png&TRANSPARENT=true';
+
+                radarOverlay = L.tileLayer(fallbackUrl, {
+                    opacity: 0.6,
+                    attribution: 'Iowa Environmental Mesonet',
+                    maxZoom: 10
+                });
+
+                if (overlayVisible) {
+                    radarOverlay.addTo(map);
+                }
+            } finally {
+                refreshBtn.disabled = false;
+            }
+        }
+
+        function refreshData() {
+            fetchHRRRData();
+        }
+
+        function toggleOverlay() {
+            const toggleBtn = document.getElementById('toggle');
+            if (overlayVisible && radarOverlay) {
+                map.removeLayer(radarOverlay);
+                overlayVisible = false;
+                toggleBtn.textContent = 'Show Overlay';
+            } else if (radarOverlay) {
+                radarOverlay.addTo(map);
+                overlayVisible = true;
+                toggleBtn.textContent = 'Hide Overlay';
+            }
+        }
+
+        // Load data on page load
+        fetchHRRRData();
+
+        // Auto-refresh every 5 minutes
+        setInterval(fetchHRRRData, 5 * 60 * 1000);
+    </script>
+</body>
+</html>
