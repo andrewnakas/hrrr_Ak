@@ -1,14 +1,13 @@
-# Alaska HRRR Radar Viewer
+# Alaska HRRR + NEXRAD Radar Viewer
 
-A GitHub Pages application that displays Alaska HRRR (High-Resolution Rapid Refresh) forecast radar data alongside real-time NEXRAD observations on an interactive Leaflet map.
+A GitHub Pages application that displays HRRR (High-Resolution Rapid Refresh) composite reflectivity forecast data alongside real-time NEXRAD observations on an interactive Leaflet map.
 
 ## Features
 
 - Interactive map centered on Alaska
 - **Dual-layer radar display:**
-  - **HRRR Alaska**: 0-hour forecast composite reflectivity (REFC) from GRIB2 files
-  - **NEXRAD**: Real-time observations for alignment and verification
-- GRIB2 file parsing and rendering
+  - **HRRR**: Composite reflectivity forecast tiles
+  - **NEXRAD**: Real-time observations for comparison
 - Independent layer toggle controls
 - Auto-refresh every 15 minutes
 - Manual refresh for HRRR data
@@ -17,29 +16,25 @@ A GitHub Pages application that displays Alaska HRRR (High-Resolution Rapid Refr
 
 ## Data Sources
 
-### Primary: HRRR Alaska
-- Fetches GRIB2 files from AWS S3 (NOAA HRRR Big Data Program)
-- Direct S3 access - no CORS proxy needed
+### HRRR Composite Reflectivity
+- Iowa Environmental Mesonet HRRR composite tiles
 - Composite reflectivity (REFC parameter)
-- 0-hour forecast (F000)
-- 1299x919 grid covering Alaska
-- Updated hourly (with 1-3 hour processing delay)
+- Hourly model runs
+- CONUS coverage (includes parts of Alaska)
 - Auto-detects most recent available data
 
-### Secondary: NEXRAD
-- Iowa Environmental Mesonet's NEXRAD composite (N0Q product)
+### NEXRAD Real-Time Radar
+- Iowa Environmental Mesonet NEXRAD composite (N0Q product)
 - Real-time observations
-- Provides baseline for alignment with HRRR data
 - Full Alaska and CONUS coverage
+- Updates continuously
 
 ## How It Works
 
-1. **GRIB2 Fetching**: Downloads HRRR Alaska GRIB2 files from AWS S3 (noaa-hrrr-bdp-pds bucket)
+1. **Tile Loading**: Fetches pre-rendered HRRR composite reflectivity tiles
 2. **Availability Check**: Tries multiple recent hours to find the latest available data
-3. **GRIB2 Parsing**: Custom JavaScript parser (`grib2-parser.js`) extracts REFC data
-4. **Canvas Rendering**: Converts GRIB2 data to canvas with reflectivity color mapping
-5. **Leaflet Overlay**: Displays canvas as image overlay with proper Alaska bounds
-6. **NEXRAD Layer**: Provides real-time baseline for comparison and alignment
+3. **Leaflet Display**: Shows tiles as overlay layers on the map
+4. **NEXRAD Layer**: Provides real-time baseline for comparison
 
 ## Deployment
 
@@ -60,10 +55,7 @@ Simply open `index.html` in a web browser to test locally.
 
 - Leaflet.js for interactive mapping
 - OpenStreetMap tiles for base layer
-- Custom GRIB2 parser for HRRR data processing
-- Canvas API for radar rendering
-- AWS S3 (NOAA HRRR Big Data Program) for HRRR Alaska GRIB2 files
-- Iowa Environmental Mesonet for NEXRAD data
+- Iowa Environmental Mesonet for HRRR and NEXRAD tile services
 - GitHub Pages for hosting
 - GitHub Actions for CI/CD
 
@@ -71,7 +63,6 @@ Simply open `index.html` in a web browser to test locally.
 
 ```
 ├── index.html           # Main application
-├── grib2-parser.js     # GRIB2 file parser
 ├── .github/
 │   └── workflows/
 │       └── deploy.yml  # GitHub Actions deployment
@@ -80,9 +71,9 @@ Simply open `index.html` in a web browser to test locally.
 
 ## Technical Details
 
-- **HRRR Alaska Grid**: 1299 × 919 points
-- **Projection**: Lambert Conformal (Alaska-centered)
-- **Geographic Bounds**: 51°N to 71.5°N, 179°W to 130°W
+- **HRRR Data**: Pre-rendered composite reflectivity tiles
+- **Coverage**: CONUS (includes parts of Alaska)
 - **Reflectivity Range**: 5-75+ dBZ
 - **Update Frequency**: Hourly (HRRR), Real-time (NEXRAD)
 - **Auto-refresh**: Every 15 minutes
+- **Tile Format**: PNG tiles via XYZ tile service

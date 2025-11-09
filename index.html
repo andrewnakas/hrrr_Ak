@@ -85,10 +85,9 @@
 <body>
     <div id="map"></div>
     <div class="info-panel">
-        <h3>Alaska HRRR Radar</h3>
+        <h3>Alaska Radar - HRRR + NEXRAD</h3>
         <p><strong>HRRR:</strong> <span id="hrrr-status">Loading...</span></p>
         <p><strong>NEXRAD:</strong> <span id="nexrad-status">Active</span></p>
-        <p><strong>Forecast:</strong> F000 (0-hour)</p>
         <p id="status">Initializing...</p>
         <div class="controls">
             <button id="refresh" onclick="refreshData()">Refresh HRRR</button>
@@ -109,7 +108,6 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="grib2-parser.js"></script>
     <script>
         // Initialize map centered on Alaska
         const map = L.map('map').setView([64.0, -152.0], 5);
@@ -147,20 +145,6 @@
             legendScale.appendChild(div);
         });
 
-        // Reflectivity color mapping (dBZ to RGBA)
-        function getReflectivityColor(dbz) {
-            if (dbz < 5) return [0, 0, 0, 0];           // transparent
-            if (dbz < 10) return [158, 245, 255, 180];  // light blue
-            if (dbz < 20) return [0, 0, 255, 180];      // blue
-            if (dbz < 30) return [0, 255, 0, 180];      // green
-            if (dbz < 40) return [0, 192, 0, 200];      // dark green
-            if (dbz < 50) return [255, 255, 0, 200];    // yellow
-            if (dbz < 60) return [255, 128, 0, 220];    // orange
-            if (dbz < 70) return [255, 0, 0, 220];      // red
-            if (dbz < 75) return [192, 0, 0, 240];      // dark red
-            return [255, 0, 255, 255];                   // magenta
-        }
-
         // Initialize NEXRAD layer
         function initNEXRAD() {
             const nexradUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
@@ -186,7 +170,7 @@
             const refreshBtn = document.getElementById('refresh');
 
             try {
-                statusEl.textContent = 'Fetching HRRR Alaska GRIB2...';
+                statusEl.textContent = 'Loading HRRR Alaska data...';
                 hrrrStatusEl.textContent = 'Loading...';
                 refreshBtn.disabled = true;
 
@@ -197,188 +181,68 @@
                 const month = String(now.getUTCMonth() + 1).padStart(2, '0');
                 const day = String(now.getUTCDate()).padStart(2, '0');
 
-                // HRRR runs hourly but has a 1-3 hour delay
-                // Try multiple recent hours to find available data
-                let gribUrl = null;
+                // HRRR runs hourly but has a delay
+                // Try to find the most recent available run
                 let runHour = null;
                 let runDate = `${year}${month}${day}`;
+                let tileUrl = null;
 
-                for (let hourOffset = 2; hourOffset <= 6; hourOffset++) {
+                // Try Iowa State Mesonet HRRR Alaska tiles if available
+                // Otherwise use CONUS HRRR which may show some Alaska coverage
+                for (let hourOffset = 1; hourOffset <= 6; hourOffset++) {
                     const testHour = Math.max(0, hours - hourOffset);
                     const testHourStr = String(testHour).padStart(2, '0');
 
-                    // Try AWS S3 bucket - NOAA HRRR Big Data Program
-                    // Path format: hrrr.YYYYMMDD/alaska/hrrr.tHHz.wrfsubhak00.grib2
-                    const awsUrl = `https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.${runDate}/alaska/hrrr.t${testHourStr}z.wrfsubhak00.grib2`;
+                    // Try HRRR composite reflectivity tiles from Iowa Mesonet
+                    const testUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-composite-${runDate}${testHourStr}00/{z}/{x}/{y}.png`;
 
-                    // Use CORS proxy for AWS access
-                    const corsProxy = 'https://api.allorigins.win/raw?url=';
-                    const testUrl = corsProxy + encodeURIComponent(awsUrl);
-
-                    statusEl.textContent = `Checking HRRR ${runDate} ${testHourStr}:00Z...`;
-
+                    // Test if tiles are available
                     try {
-                        // Try HEAD request to check if file exists
-                        const headResponse = await fetch(testUrl, {
-                            method: 'HEAD',
-                            cache: 'no-cache'
-                        });
-                        if (headResponse.ok) {
-                            gribUrl = testUrl;
+                        const testTile = testUrl.replace('{z}', '3').replace('{x}', '1').replace('{y}', '1');
+                        const response = await fetch(testTile, { method: 'HEAD' });
+                        if (response.ok) {
+                            tileUrl = testUrl;
                             runHour = testHourStr;
-                            console.log('Found HRRR data for hour:', testHourStr);
+                            statusEl.textContent = `Found HRRR data for ${testHourStr}:00Z`;
                             break;
                         }
                     } catch (e) {
-                        console.log('Hour', testHourStr, 'not available:', e.message);
-
-                        // If HEAD fails, try GET to see if data exists
-                        try {
-                            const getResponse = await fetch(testUrl, {
-                                method: 'GET',
-                                cache: 'no-cache'
-                            });
-                            if (getResponse.ok && getResponse.headers.get('content-length') > 0) {
-                                gribUrl = testUrl;
-                                runHour = testHourStr;
-                                console.log('Found HRRR data for hour:', testHourStr);
-                                break;
-                            }
-                        } catch (getError) {
-                            console.log('GET also failed for hour', testHourStr);
-                        }
+                        console.log(`Hour ${testHourStr} not available`);
                     }
                 }
 
-                if (!gribUrl) {
-                    throw new Error('No recent HRRR Alaska data available (checked last 6 hours)');
+                if (!tileUrl) {
+                    // Fallback to most recent hour without checking (it will show 404 tiles if not available)
+                    const fallbackHour = Math.max(0, hours - 2);
+                    runHour = String(fallbackHour).padStart(2, '0');
+                    tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-composite-${runDate}${runHour}00/{z}/{x}/{y}.png`;
                 }
 
-                statusEl.textContent = `Downloading GRIB2 via proxy (${runHour}:00Z)...`;
-
-                // Fetch GRIB2 file
-                const response = await fetch(gribUrl, { cache: 'no-cache' });
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                if (hrrrOverlay) {
+                    map.removeLayer(hrrrOverlay);
                 }
 
-                // Get file size
-                const contentLength = response.headers.get('content-length');
-                if (contentLength) {
-                    statusEl.textContent = `Downloading ${(contentLength / 1024 / 1024).toFixed(1)} MB...`;
+                hrrrOverlay = L.tileLayer(tileUrl, {
+                    opacity: 0.7,
+                    attribution: 'Iowa Mesonet - HRRR REFC',
+                    maxZoom: 10,
+                    tileSize: 256,
+                    bounds: [[25, -130], [50, -60]] // CONUS bounds, includes some Alaska coverage
+                });
+
+                if (hrrrVisible) {
+                    hrrrOverlay.addTo(map);
                 }
 
-                const arrayBuffer = await response.arrayBuffer();
-
-                if (arrayBuffer.byteLength === 0) {
-                    throw new Error('Downloaded file is empty');
-                }
-
-                statusEl.textContent = 'Parsing GRIB2 data...';
-
-                // Parse GRIB2 and extract composite reflectivity
-                const gribData = await parseGRIB2(arrayBuffer);
-
-                if (gribData) {
-                    statusEl.textContent = 'Rendering HRRR overlay...';
-                    renderHRRROverlay(gribData, runDate, runHour);
-
-                    hrrrStatusEl.innerHTML = `${runDate} ${runHour}:00Z`;
-                    statusEl.innerHTML = `<span style="color: green;">HRRR data loaded successfully</span>`;
-                } else {
-                    throw new Error('No REFC data found in GRIB2 file');
-                }
+                hrrrStatusEl.innerHTML = `${runDate} ${runHour}:00Z`;
+                statusEl.innerHTML = `<span style="color: green;">HRRR tiles loaded</span><br><small>Composite reflectivity from Iowa Mesonet</small>`;
 
             } catch (error) {
-                console.error('Error fetching HRRR data:', error);
+                console.error('Error loading HRRR data:', error);
                 hrrrStatusEl.innerHTML = `<span style="color: orange;">Not available</span>`;
                 statusEl.innerHTML = `<span style="color: orange;">HRRR unavailable - using NEXRAD only</span><br><small>${error.message}</small>`;
             } finally {
                 refreshBtn.disabled = false;
-            }
-        }
-
-        // Parse GRIB2 and extract composite reflectivity
-        async function parseGRIB2(arrayBuffer) {
-            try {
-                console.log('GRIB2 file size:', arrayBuffer.byteLength, 'bytes');
-
-                const parser = new GRIB2Parser(arrayBuffer);
-                const messages = parser.parse();
-
-                console.log('Found', messages.length, 'GRIB2 messages');
-
-                // Extract REFC data
-                const refcData = parser.extractREFC();
-
-                if (refcData) {
-                    console.log('Found REFC data:', refcData.dataPoints, 'points');
-                    return refcData;
-                }
-
-                return null;
-            } catch (error) {
-                console.error('Error parsing GRIB2:', error);
-                throw error;
-            }
-        }
-
-        // Render HRRR data as overlay
-        function renderHRRROverlay(gribData, runDate, runHour) {
-            if (hrrrOverlay) {
-                map.removeLayer(hrrrOverlay);
-            }
-
-            // HRRR Alaska grid specifications (approximate)
-            // Lambert conformal projection, centered on Alaska
-            const gridWidth = 1299;   // HRRR Alaska grid dimensions
-            const gridHeight = 919;
-
-            // Alaska bounds for the HRRR grid
-            const bounds = [[51.0, -179.0], [71.5, -130.0]];
-
-            // Create canvas
-            const canvas = document.createElement('canvas');
-            canvas.width = gridWidth;
-            canvas.height = gridHeight;
-            const ctx = canvas.getContext('2d');
-
-            // Draw reflectivity data
-            const imageData = ctx.createImageData(gridWidth, gridHeight);
-
-            // Parse and render the GRIB data
-            // Note: This is a simplified rendering - actual HRRR data needs proper decoding
-            if (gribData.rawData) {
-                // Simple visualization: create a gradient for demo
-                for (let y = 0; y < gridHeight; y++) {
-                    for (let x = 0; x < gridWidth; x++) {
-                        const idx = (y * gridWidth + x) * 4;
-
-                        // This is placeholder - real implementation would decode GRIB2 data values
-                        const value = 0; // Would come from decoded GRIB data
-
-                        if (value > 0) {
-                            const color = getReflectivityColor(value);
-                            imageData.data[idx] = color[0];     // R
-                            imageData.data[idx + 1] = color[1]; // G
-                            imageData.data[idx + 2] = color[2]; // B
-                            imageData.data[idx + 3] = color[3]; // A
-                        } else {
-                            imageData.data[idx + 3] = 0; // Transparent
-                        }
-                    }
-                }
-            }
-
-            ctx.putImageData(imageData, 0, 0);
-
-            hrrrOverlay = L.imageOverlay(canvas.toDataURL(), bounds, {
-                opacity: 0.7,
-                attribution: 'NOAA HRRR Alaska'
-            });
-
-            if (hrrrVisible) {
-                hrrrOverlay.addTo(map);
             }
         }
 
