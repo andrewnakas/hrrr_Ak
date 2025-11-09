@@ -85,10 +85,11 @@
 <body>
     <div id="map"></div>
     <div class="info-panel">
-        <h3>Alaska Radar - HRRR + NEXRAD</h3>
-        <p><strong>HRRR:</strong> <span id="hrrr-status">Loading...</span></p>
-        <p><strong>NEXRAD:</strong> <span id="nexrad-status">Active</span></p>
+        <h3>Alaska Radar Viewer</h3>
+        <p><strong>Primary:</strong> <span id="nexrad-status">NEXRAD Active</span></p>
+        <p><strong>HRRR (CONUS):</strong> <span id="hrrr-status">Loading...</span></p>
         <p id="status">Initializing...</p>
+        <p style="font-size: 11px; color: #666; margin-top: 10px;"><em>Note: Alaska HRRR tiles unavailable via tile services. NEXRAD provides real-time Alaska coverage.</em></p>
         <div class="controls">
             <button id="refresh" onclick="refreshData()">Refresh HRRR</button>
             <button id="toggle-hrrr" onclick="toggleHRRR()">Hide HRRR</button>
@@ -185,52 +186,37 @@
                 // Try to find the most recent available run
                 let runHour = null;
                 let runDate = `${year}${month}${day}`;
-                let tileUrl = null;
-                let dataSource = null;
 
-                // Try Alaska-specific HRRR first, then fall back to CONUS
-                const tilePatterns = [
-                    { pattern: 'hrrr-ak-composite', name: 'HRRR Alaska' },
-                    { pattern: 'hrrr-composite', name: 'HRRR CONUS' }
-                ];
+                // Use CONUS HRRR - it has best availability
+                // Note: Alaska HRRR tiles don't exist on Iowa Mesonet
+                for (let hourOffset = 1; hourOffset <= 6; hourOffset++) {
+                    const testHour = Math.max(0, hours - hourOffset);
+                    const testHourStr = String(testHour).padStart(2, '0');
 
-                for (const tileType of tilePatterns) {
-                    if (tileUrl) break; // Stop if we found data
+                    // Test with a CONUS tile to check availability
+                    const testUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-composite-${runDate}${testHourStr}00/{z}/{x}/{y}.png`;
 
-                    for (let hourOffset = 1; hourOffset <= 6; hourOffset++) {
-                        const testHour = Math.max(0, hours - hourOffset);
-                        const testHourStr = String(testHour).padStart(2, '0');
-
-                        // Try this tile pattern
-                        const testUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${tileType.pattern}-${runDate}${testHourStr}00/{z}/{x}/{y}.png`;
-
-                        // Test if tiles are available - use Alaska coordinates for test tile
-                        try {
-                            // Test tile over Alaska (z=3, centered on Alaska)
-                            const testTile = testUrl.replace('{z}', '3').replace('{x}', '0').replace('{y}', '1');
-                            const response = await fetch(testTile, { method: 'HEAD' });
-                            if (response.ok) {
-                                tileUrl = testUrl;
-                                runHour = testHourStr;
-                                dataSource = tileType.name;
-                                statusEl.textContent = `Found ${tileType.name} data for ${testHourStr}:00Z`;
-                                console.log(`Using ${tileType.name} tiles for hour ${testHourStr}`);
-                                break;
-                            }
-                        } catch (e) {
-                            console.log(`${tileType.name} hour ${testHourStr} not available`);
+                    try {
+                        // Test a central CONUS tile
+                        const testTile = testUrl.replace('{z}', '4').replace('{x}', '3').replace('{y}', '5');
+                        const response = await fetch(testTile, { method: 'HEAD' });
+                        if (response.ok) {
+                            runHour = testHourStr;
+                            statusEl.textContent = `Found HRRR data for ${testHourStr}:00Z`;
+                            console.log(`Using HRRR CONUS tiles for hour ${testHourStr}`);
+                            break;
                         }
+                    } catch (e) {
+                        console.log(`Hour ${testHourStr} not available`);
                     }
                 }
 
-                if (!tileUrl) {
-                    // Fallback to most recent hour without checking
-                    const fallbackHour = Math.max(0, hours - 2);
-                    runHour = String(fallbackHour).padStart(2, '0');
-                    // Try Alaska first, fall back to CONUS
-                    tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-ak-composite-${runDate}${runHour}00/{z}/{x}/{y}.png`;
-                    dataSource = 'HRRR Alaska (unchecked)';
+                if (!runHour) {
+                    // Fallback to 2 hours ago
+                    runHour = String(Math.max(0, hours - 2)).padStart(2, '0');
                 }
+
+                const tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-composite-${runDate}${runHour}00/{z}/{x}/{y}.png`;
 
                 if (hrrrOverlay) {
                     map.removeLayer(hrrrOverlay);
@@ -248,8 +234,8 @@
                     hrrrOverlay.addTo(map);
                 }
 
-                hrrrStatusEl.innerHTML = `${runDate} ${runHour}:00Z`;
-                statusEl.innerHTML = `<span style="color: green;">${dataSource || 'HRRR'} loaded</span><br><small>Composite reflectivity tiles</small>`;
+                hrrrStatusEl.innerHTML = `${runDate} ${runHour}:00Z (CONUS)`;
+                statusEl.innerHTML = `<span style="color: orange;">HRRR CONUS only</span><br><small>Alaska HRRR tiles not available - use NEXRAD for Alaska coverage</small>`;
 
             } catch (error) {
                 console.error('Error loading HRRR data:', error);
