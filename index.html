@@ -207,23 +207,46 @@
                     const testHour = Math.max(0, hours - hourOffset);
                     const testHourStr = String(testHour).padStart(2, '0');
 
-                    // AWS S3 bucket - NOAA HRRR Big Data Program
-                    // Format: hrrr.YYYYMMDD/alaska/hrrr.tHHz.wrfsubhak00.grib2
-                    const testUrl = `https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.${runDate}/alaska/hrrr.t${testHourStr}z.wrfsubhak00.grib2`;
+                    // Try AWS S3 bucket - NOAA HRRR Big Data Program
+                    // Path format: hrrr.YYYYMMDD/alaska/hrrr.tHHz.wrfsubhak00.grib2
+                    const awsUrl = `https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.${runDate}/alaska/hrrr.t${testHourStr}z.wrfsubhak00.grib2`;
+
+                    // Use CORS proxy for AWS access
+                    const corsProxy = 'https://api.allorigins.win/raw?url=';
+                    const testUrl = corsProxy + encodeURIComponent(awsUrl);
 
                     statusEl.textContent = `Checking HRRR ${runDate} ${testHourStr}:00Z...`;
 
                     try {
                         // Try HEAD request to check if file exists
-                        const headResponse = await fetch(testUrl, { method: 'HEAD' });
+                        const headResponse = await fetch(testUrl, {
+                            method: 'HEAD',
+                            cache: 'no-cache'
+                        });
                         if (headResponse.ok) {
                             gribUrl = testUrl;
                             runHour = testHourStr;
-                            console.log('Found HRRR data:', gribUrl);
+                            console.log('Found HRRR data for hour:', testHourStr);
                             break;
                         }
                     } catch (e) {
                         console.log('Hour', testHourStr, 'not available:', e.message);
+
+                        // If HEAD fails, try GET to see if data exists
+                        try {
+                            const getResponse = await fetch(testUrl, {
+                                method: 'GET',
+                                cache: 'no-cache'
+                            });
+                            if (getResponse.ok && getResponse.headers.get('content-length') > 0) {
+                                gribUrl = testUrl;
+                                runHour = testHourStr;
+                                console.log('Found HRRR data for hour:', testHourStr);
+                                break;
+                            }
+                        } catch (getError) {
+                            console.log('GET also failed for hour', testHourStr);
+                        }
                     }
                 }
 
@@ -231,19 +254,26 @@
                     throw new Error('No recent HRRR Alaska data available (checked last 6 hours)');
                 }
 
-                statusEl.textContent = `Downloading GRIB2 from AWS S3 (${runHour}:00Z)...`;
+                statusEl.textContent = `Downloading GRIB2 via proxy (${runHour}:00Z)...`;
 
-                // Fetch GRIB2 file from AWS S3
-                const response = await fetch(gribUrl);
+                // Fetch GRIB2 file
+                const response = await fetch(gribUrl, { cache: 'no-cache' });
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
 
                 // Get file size
                 const contentLength = response.headers.get('content-length');
-                statusEl.textContent = `Downloading ${(contentLength / 1024 / 1024).toFixed(1)} MB...`;
+                if (contentLength) {
+                    statusEl.textContent = `Downloading ${(contentLength / 1024 / 1024).toFixed(1)} MB...`;
+                }
 
                 const arrayBuffer = await response.arrayBuffer();
+
+                if (arrayBuffer.byteLength === 0) {
+                    throw new Error('Downloaded file is empty');
+                }
+
                 statusEl.textContent = 'Parsing GRIB2 data...';
 
                 // Parse GRIB2 and extract composite reflectivity
