@@ -18,11 +18,13 @@ A GitHub Pages application that displays Alaska HRRR (High-Resolution Rapid Refr
 ## Data Sources
 
 ### Primary: HRRR Alaska
-- Fetches GRIB2 files from NOAA NOMADS
+- Fetches GRIB2 files from AWS S3 (NOAA HRRR Big Data Program)
+- Direct S3 access - no CORS proxy needed
 - Composite reflectivity (REFC parameter)
 - 0-hour forecast (F000)
 - 1299x919 grid covering Alaska
-- Updated hourly (with 1-2 hour processing delay)
+- Updated hourly (with 1-3 hour processing delay)
+- Auto-detects most recent available data
 
 ### Secondary: NEXRAD
 - Iowa Environmental Mesonet's NEXRAD composite (N0Q product)
@@ -32,11 +34,12 @@ A GitHub Pages application that displays Alaska HRRR (High-Resolution Rapid Refr
 
 ## How It Works
 
-1. **GRIB2 Fetching**: Downloads HRRR Alaska GRIB2 files from NOAA NOMADS via CORS proxy
-2. **GRIB2 Parsing**: Custom JavaScript parser (`grib2-parser.js`) extracts REFC data
-3. **Canvas Rendering**: Converts GRIB2 data to canvas with reflectivity color mapping
-4. **Leaflet Overlay**: Displays canvas as image overlay with proper Alaska bounds
-5. **NEXRAD Layer**: Provides real-time baseline for comparison and alignment
+1. **GRIB2 Fetching**: Downloads HRRR Alaska GRIB2 files from AWS S3 (noaa-hrrr-bdp-pds bucket)
+2. **Availability Check**: Tries multiple recent hours to find the latest available data
+3. **GRIB2 Parsing**: Custom JavaScript parser (`grib2-parser.js`) extracts REFC data
+4. **Canvas Rendering**: Converts GRIB2 data to canvas with reflectivity color mapping
+5. **Leaflet Overlay**: Displays canvas as image overlay with proper Alaska bounds
+6. **NEXRAD Layer**: Provides real-time baseline for comparison and alignment
 
 ## Deployment
 
@@ -59,7 +62,7 @@ Simply open `index.html` in a web browser to test locally.
 - OpenStreetMap tiles for base layer
 - Custom GRIB2 parser for HRRR data processing
 - Canvas API for radar rendering
-- NOAA NOMADS for HRRR Alaska GRIB2 files
+- AWS S3 (NOAA HRRR Big Data Program) for HRRR Alaska GRIB2 files
 - Iowa Environmental Mesonet for NEXRAD data
 - GitHub Pages for hosting
 - GitHub Actions for CI/CD

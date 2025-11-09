@@ -197,30 +197,56 @@
                 const month = String(now.getUTCMonth() + 1).padStart(2, '0');
                 const day = String(now.getUTCDate()).padStart(2, '0');
 
-                // HRRR runs hourly but has a 1-2 hour delay
-                const runHour = String(Math.max(0, hours - 2)).padStart(2, '0');
-                const runDate = `${year}${month}${day}`;
+                // HRRR runs hourly but has a 1-3 hour delay
+                // Try multiple recent hours to find available data
+                let gribUrl = null;
+                let runHour = null;
+                let runDate = `${year}${month}${day}`;
 
-                // HRRR Alaska GRIB2 URL from NOMADS
-                // Format: hrrr.t{HH}z.wrfsubhf00.grib2
-                // Using CORS proxy for NOMADS access
-                const gribUrl = `https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod/hrrr.${runDate}/alaska/hrrr.t${runHour}z.wrfsubhak00.grib2`;
-                const corsProxy = 'https://corsproxy.io/?';
-                const fullUrl = corsProxy + encodeURIComponent(gribUrl);
+                for (let hourOffset = 2; hourOffset <= 6; hourOffset++) {
+                    const testHour = Math.max(0, hours - hourOffset);
+                    const testHourStr = String(testHour).padStart(2, '0');
 
-                statusEl.textContent = 'Downloading GRIB2 data...';
+                    // AWS S3 bucket - NOAA HRRR Big Data Program
+                    // Format: hrrr.YYYYMMDD/alaska/hrrr.tHHz.wrfsubhak00.grib2
+                    const testUrl = `https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.${runDate}/alaska/hrrr.t${testHourStr}z.wrfsubhak00.grib2`;
 
-                // Fetch GRIB2 file
-                const response = await fetch(fullUrl);
+                    statusEl.textContent = `Checking HRRR ${runDate} ${testHourStr}:00Z...`;
+
+                    try {
+                        // Try HEAD request to check if file exists
+                        const headResponse = await fetch(testUrl, { method: 'HEAD' });
+                        if (headResponse.ok) {
+                            gribUrl = testUrl;
+                            runHour = testHourStr;
+                            console.log('Found HRRR data:', gribUrl);
+                            break;
+                        }
+                    } catch (e) {
+                        console.log('Hour', testHourStr, 'not available:', e.message);
+                    }
+                }
+
+                if (!gribUrl) {
+                    throw new Error('No recent HRRR Alaska data available (checked last 6 hours)');
+                }
+
+                statusEl.textContent = `Downloading GRIB2 from AWS S3 (${runHour}:00Z)...`;
+
+                // Fetch GRIB2 file from AWS S3
+                const response = await fetch(gribUrl);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
+
+                // Get file size
+                const contentLength = response.headers.get('content-length');
+                statusEl.textContent = `Downloading ${(contentLength / 1024 / 1024).toFixed(1)} MB...`;
 
                 const arrayBuffer = await response.arrayBuffer();
                 statusEl.textContent = 'Parsing GRIB2 data...';
 
                 // Parse GRIB2 and extract composite reflectivity
-                // GRIB2 parameter for REFC (Composite Reflectivity)
                 const gribData = await parseGRIB2(arrayBuffer);
 
                 if (gribData) {
