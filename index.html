@@ -186,36 +186,50 @@
                 let runHour = null;
                 let runDate = `${year}${month}${day}`;
                 let tileUrl = null;
+                let dataSource = null;
 
-                // Try Iowa State Mesonet HRRR Alaska tiles if available
-                // Otherwise use CONUS HRRR which may show some Alaska coverage
-                for (let hourOffset = 1; hourOffset <= 6; hourOffset++) {
-                    const testHour = Math.max(0, hours - hourOffset);
-                    const testHourStr = String(testHour).padStart(2, '0');
+                // Try Alaska-specific HRRR first, then fall back to CONUS
+                const tilePatterns = [
+                    { pattern: 'hrrr-ak-composite', name: 'HRRR Alaska' },
+                    { pattern: 'hrrr-composite', name: 'HRRR CONUS' }
+                ];
 
-                    // Try HRRR composite reflectivity tiles from Iowa Mesonet
-                    const testUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-composite-${runDate}${testHourStr}00/{z}/{x}/{y}.png`;
+                for (const tileType of tilePatterns) {
+                    if (tileUrl) break; // Stop if we found data
 
-                    // Test if tiles are available
-                    try {
-                        const testTile = testUrl.replace('{z}', '3').replace('{x}', '1').replace('{y}', '1');
-                        const response = await fetch(testTile, { method: 'HEAD' });
-                        if (response.ok) {
-                            tileUrl = testUrl;
-                            runHour = testHourStr;
-                            statusEl.textContent = `Found HRRR data for ${testHourStr}:00Z`;
-                            break;
+                    for (let hourOffset = 1; hourOffset <= 6; hourOffset++) {
+                        const testHour = Math.max(0, hours - hourOffset);
+                        const testHourStr = String(testHour).padStart(2, '0');
+
+                        // Try this tile pattern
+                        const testUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/${tileType.pattern}-${runDate}${testHourStr}00/{z}/{x}/{y}.png`;
+
+                        // Test if tiles are available - use Alaska coordinates for test tile
+                        try {
+                            // Test tile over Alaska (z=3, centered on Alaska)
+                            const testTile = testUrl.replace('{z}', '3').replace('{x}', '0').replace('{y}', '1');
+                            const response = await fetch(testTile, { method: 'HEAD' });
+                            if (response.ok) {
+                                tileUrl = testUrl;
+                                runHour = testHourStr;
+                                dataSource = tileType.name;
+                                statusEl.textContent = `Found ${tileType.name} data for ${testHourStr}:00Z`;
+                                console.log(`Using ${tileType.name} tiles for hour ${testHourStr}`);
+                                break;
+                            }
+                        } catch (e) {
+                            console.log(`${tileType.name} hour ${testHourStr} not available`);
                         }
-                    } catch (e) {
-                        console.log(`Hour ${testHourStr} not available`);
                     }
                 }
 
                 if (!tileUrl) {
-                    // Fallback to most recent hour without checking (it will show 404 tiles if not available)
+                    // Fallback to most recent hour without checking
                     const fallbackHour = Math.max(0, hours - 2);
                     runHour = String(fallbackHour).padStart(2, '0');
-                    tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-composite-${runDate}${runHour}00/{z}/{x}/{y}.png`;
+                    // Try Alaska first, fall back to CONUS
+                    tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-ak-composite-${runDate}${runHour}00/{z}/{x}/{y}.png`;
+                    dataSource = 'HRRR Alaska (unchecked)';
                 }
 
                 if (hrrrOverlay) {
@@ -226,8 +240,8 @@
                     opacity: 0.7,
                     attribution: 'Iowa Mesonet - HRRR REFC',
                     maxZoom: 10,
-                    tileSize: 256,
-                    bounds: [[25, -130], [50, -60]] // CONUS bounds, includes some Alaska coverage
+                    tileSize: 256
+                    // No bounds restriction - allow tiles to show anywhere including Alaska
                 });
 
                 if (hrrrVisible) {
@@ -235,7 +249,7 @@
                 }
 
                 hrrrStatusEl.innerHTML = `${runDate} ${runHour}:00Z`;
-                statusEl.innerHTML = `<span style="color: green;">HRRR tiles loaded</span><br><small>Composite reflectivity from Iowa Mesonet</small>`;
+                statusEl.innerHTML = `<span style="color: green;">${dataSource || 'HRRR'} loaded</span><br><small>Composite reflectivity tiles</small>`;
 
             } catch (error) {
                 console.error('Error loading HRRR data:', error);
