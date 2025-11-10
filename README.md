@@ -1,56 +1,51 @@
-# Alaska Radar Viewer
+# Alaska HRRR Radar Viewer
 
-A GitHub Pages application that displays real-time radar observations for Alaska using NOAA's official MRMS radar service and Iowa Environmental Mesonet data.
+A GitHub Pages application that displays Alaska HRRR (High-Resolution Rapid Refresh) composite reflectivity forecast data directly from NOAA's RapidRefresh service, using the same method as NOAA's DESI tool.
 
 ## Features
 
 - Interactive map centered on Alaska
 - **Dual-layer radar display:**
-  - **NOAA MRMS Radar**: Official real-time radar - **Full Alaska + CONUS coverage**
-  - **Iowa Mesonet NEXRAD**: Alternative real-time source for comparison
+  - **HRRR Alaska**: Official NOAA forecast model composite reflectivity - **Full Alaska coverage**
+  - **NEXRAD**: Real-time observations for comparison
 - Independent layer toggle controls
-- Auto-refresh every 15 minutes
+- Auto-refresh every 3 hours (when new HRRR runs available)
 - Reflectivity color mapping (5-75+ dBZ)
 - Responsive design
 
 ## Data Sources
 
-### NOAA MRMS Radar (Primary)
-- **Service**: NOAA Weather Map Services WMS ImageServer
-- **Coverage**: ✅ **Alaska, CONUS, Caribbean, Guam, Hawaii**
-- **Data**: Multi-Radar Multi-Sensor (MRMS) algorithm
-- **Update frequency**: Every 10 minutes
-- **Window**: 4-hour moving window
-- **Protocol**: WMS 1.3.0 via Leaflet WMS layer
+### HRRR Alaska (Primary)
+- **Service**: NOAA RapidRefresh Alaska Model Graphics
+- **URL**: `rapidrefresh.noaa.gov/alaska/displayMapUpdated.cgi`
+- **Coverage**: ✅ **Full Alaska domain**
+- **Product**: Composite reflectivity at surface (cref_full_sfc)
+- **Update frequency**: Every 3 hours (00, 03, 06, 09, 12, 15, 18, 21 UTC)
+- **Forecast**: 0-hour (F000) - current analysis
+- **Format**: Static PNG image overlays
+- **Model**: HRRR Alaska (hrrrak_ncep_jet)
 
-**Why this works for Alaska:**
-- Official NOAA service explicitly includes Alaska coverage
-- Real-time radar composites from multiple sources
-- No CORS restrictions
-- Professional-grade reliability
+**How we get the data:**
+- Same method used by NOAA's DESI visualization tool
+- Direct access to NOAA's CGI-generated HRRR Alaska images
+- Parameters: runtime (YYYYMMDDHH), plot_type (cref_full_sfc), fcst (000)
+- Image overlaid on map with proper Alaska geographic bounds
 
-### Iowa Environmental Mesonet NEXRAD (Secondary)
+### NEXRAD (Backup/Comparison)
 - Iowa Environmental Mesonet NEXRAD composite (N0Q product)
 - Real-time observations
 - Full Alaska and CONUS coverage
-- Alternative view for comparison
-
-## About Alaska HRRR Model Data
-
-HRRR forecast model data for Alaska exists but is **NOT available as pre-rendered tiles**. To access Alaska HRRR, see:
-- **Static images**: https://rapidrefresh.noaa.gov/alaska/ (web viewer)
-- **GRIB2 files**: AWS S3 `noaa-hrrr-bdp-pds` bucket (requires backend processing)
-- **Python access**: Use Herbie package to download GRIB2 files
-
-For browser-based visualization, the NOAA MRMS radar provides excellent real-time Alaska coverage.
+- Lower opacity for comparison with HRRR forecast
 
 ## How It Works
 
-1. **WMS Layer**: Loads NOAA MRMS radar via WMS protocol with Leaflet
-2. **Alaska Coverage**: WMS service explicitly includes Alaska in coverage area
-3. **Tile Layer**: Iowa Mesonet NEXRAD loaded as standard XYZ tiles
-4. **Dual Display**: Both layers shown simultaneously with independent opacity controls
-5. **Auto-refresh**: Layers reload every 15 minutes to get latest data
+1. **Determine HRRR Run**: Finds most recent 3-hour HRRR Alaska run (00, 03, 06, 09, 12, 15, 18, 21 UTC)
+2. **Build Image URL**: Constructs URL with runtime and parameters for composite reflectivity
+3. **Image Overlay**: Uses Leaflet's L.imageOverlay() to display PNG over Alaska bounds
+4. **NEXRAD Layer**: Loads real-time NEXRAD tiles for comparison
+5. **Auto-refresh**: Reloads HRRR image every 3 hours when new model run available
+
+**Same as DESI**: This implementation uses the exact same `displayMapUpdated.cgi` endpoint that powers NOAA's DESI visualization tool at sites.gsl.noaa.gov/desi/
 
 ## Deployment
 
@@ -62,17 +57,17 @@ Simply open `index.html` in a web browser to test locally.
 
 ## Usage
 
-- **Refresh All**: Manually reload both radar layers
-- **Hide/Show NOAA**: Toggle the NOAA MRMS radar overlay
-- **Hide/Show Iowa**: Toggle the Iowa Mesonet NEXRAD overlay
+- **Refresh HRRR**: Manually reload latest HRRR Alaska image
+- **Hide/Show HRRR**: Toggle the HRRR Alaska forecast overlay
+- **Hide/Show NEXRAD**: Toggle the NEXRAD real-time radar
 - **Zoom/Pan**: Standard Leaflet map controls
 
 ## Technology Stack
 
-- Leaflet.js for interactive mapping (with WMS support)
+- Leaflet.js for interactive mapping (with image overlay support)
 - OpenStreetMap tiles for base layer
-- NOAA Weather Map Services WMS for Alaska radar coverage
-- Iowa Environmental Mesonet for NEXRAD comparison layer
+- NOAA RapidRefresh CGI scripts for HRRR Alaska images
+- Iowa Environmental Mesonet for NEXRAD comparison tiles
 - GitHub Pages for hosting
 - GitHub Actions for CI/CD
 
@@ -88,10 +83,15 @@ Simply open `index.html` in a web browser to test locally.
 
 ## Technical Details
 
-- **Primary Data**: NOAA MRMS radar via WMS ImageServer
-- **Coverage**: Alaska, CONUS, Caribbean, Guam, Hawaii
+- **HRRR Model**: 3-km resolution Alaska domain
+- **Update Schedule**: Every 3 hours (00Z, 03Z, 06Z, 09Z, 12Z, 15Z, 18Z, 21Z)
+- **Coverage**: Full Alaska (51°N-71.5°N, 179°W-130°W)
 - **Reflectivity Range**: 5-75+ dBZ
-- **Update Frequency**: Every 10 minutes (NOAA), Real-time (Iowa Mesonet)
-- **Auto-refresh**: Every 15 minutes
-- **Formats**: WMS 1.3.0 (NOAA) + PNG XYZ tiles (Iowa Mesonet)
-- **Service URL**: `mapservices.weather.noaa.gov/eventdriven/services/radar/radar_base_reflectivity_time/ImageServer/WMSServer`
+- **Image Format**: PNG overlays from NOAA RapidRefresh
+- **Auto-refresh**: Every 3 hours (aligned with model runs)
+- **CGI Endpoint**: `https://rapidrefresh.noaa.gov/alaska/displayMapUpdated.cgi`
+- **Parameters**:
+  - keys: `hrrrak_ncep_jet:`
+  - plot_type: `cref_full_sfc` (composite reflectivity)
+  - fcst: `000` (0-hour/analysis)
+  - domain: `full:hrrrak` (full Alaska domain)
