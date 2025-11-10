@@ -88,7 +88,7 @@
         <h3>Alaska Radar Viewer</h3>
         <p><strong>NEXRAD (Real-time):</strong> <span id="nexrad-status">Loading...</span></p>
         <p><strong>HRRR Alaska (Forecast):</strong> <span id="hrrr-status">Checking...</span></p>
-        <p id="status" style="font-size: 11px; color: #888; margin-top: 8px;">Note: HRRR Alaska imagery from NOAA may be unavailable due to service limitations. NEXRAD provides reliable real-time radar coverage.</p>
+        <p id="status" style="font-size: 11px; color: #888; margin-top: 8px;">HRRR Alaska data from AWS S3 via TiTiler. NEXRAD provides backup real-time radar.</p>
         <div class="controls">
             <button id="refresh" onclick="refreshData()">Refresh HRRR</button>
             <button id="toggle-hrrr" onclick="toggleHRRR()">Hide HRRR</button>
@@ -145,7 +145,7 @@
             legendScale.appendChild(div);
         });
 
-        // Initialize HRRR Alaska from rapidrefresh.noaa.gov
+        // Initialize HRRR Alaska using TiTiler + AWS S3 GRIB2 files
         async function initHRRRAlaska() {
             const statusEl = document.getElementById('status');
             const hrrrStatusEl = document.getElementById('hrrr-status');
@@ -170,12 +170,40 @@
                 }
 
                 const runHourStr = String(nearestRun).padStart(2, '0');
-                const runtime = `${year}${month}${day}${runHourStr}`;
+                const dateStr = `${year}${month}${day}`;
+                const hourStr = `t${runHourStr}z`;
 
-                // Build HRRR Alaska image URL (composite reflectivity, 0-hour forecast)
-                const hrrrUrl = `https://rapidrefresh.noaa.gov/alaska/displayMapUpdated.cgi?keys=hrrrak_ncep_jet:&runtime=${runtime}&plot_type=cref_full_sfc&fcst=000&time_inc=60&num_times=49&model=hrrr&domain=full:hrrrak`;
+                // Build S3 GRIB2 URL for Alaska HRRR composite reflectivity
+                const gribUrl = `https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.${dateStr}/alaska/hrrr.${hourStr}.wrfsfcf00.ak.grib2`;
+                const vrtUrl = `vrt://${gribUrl}?bands=1`;
+                const encodedVrtUrl = encodeURIComponent(vrtUrl);
 
-                // Alaska bounds for HRRR image overlay
+                // Composite reflectivity colormap (dBZ)
+                const colormap = [
+                    [[5,10],[0,236,236,255]],
+                    [[10,15],[1,160,246,255]],
+                    [[15,20],[0,0,246,255]],
+                    [[20,25],[0,255,0,255]],
+                    [[25,30],[0,200,0,255]],
+                    [[30,35],[0,144,0,255]],
+                    [[35,40],[255,255,0,255]],
+                    [[40,45],[231,192,0,255]],
+                    [[45,50],[255,144,0,255]],
+                    [[50,55],[255,0,0,255]],
+                    [[55,60],[214,0,0,255]],
+                    [[60,65],[192,0,0,255]],
+                    [[65,70],[255,0,255,255]],
+                    [[70,75],[153,85,201,255]]
+                ];
+                const encodedColormap = encodeURIComponent(JSON.stringify(colormap));
+
+                // Alaska bounds (min_lon, min_lat, max_lon, max_lat)
+                const bbox = '-179.0,51.0,-130.0,71.5';
+
+                // TiTiler URL to render GRIB2 as PNG
+                const hrrrUrl = `https://raster.eoapi.dev/external/bbox/${bbox}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857`;
+
+                // Alaska bounds for Leaflet image overlay [SW, NE]
                 const bounds = [[51.0, -179.0], [71.5, -130.0]];
 
                 if (hrrrOverlay) {
@@ -184,18 +212,19 @@
 
                 hrrrOverlay = L.imageOverlay(hrrrUrl, bounds, {
                     opacity: 0.7,
-                    attribution: 'NOAA HRRR Alaska'
+                    attribution: 'NOAA HRRR Alaska via TiTiler'
                 });
 
                 if (hrrrVisible) {
                     hrrrOverlay.addTo(map);
                 }
 
-                hrrrStatusEl.innerHTML = `<span style="color: orange;" title="Attempting ${year}-${month}-${day} ${runHourStr}:00Z">Loading...</span>`;
-                statusEl.innerHTML = `<span style="color: orange;">Loading HRRR Alaska...</span><br><small>Attempting ${year}-${month}-${day} ${runHourStr}:00Z</small>`;
+                hrrrStatusEl.innerHTML = `<span style="color: orange;" title="Loading ${year}-${month}-${day} ${runHourStr}:00Z">Loading...</span>`;
+                statusEl.innerHTML = `<span style="color: orange;">Loading HRRR Alaska...</span><br><small>Via TiTiler + AWS S3 GRIB2</small>`;
 
-                console.log(`HRRR Alaska: Attempting to load from URL:`);
-                console.log(hrrrUrl);
+                console.log(`HRRR Alaska: Loading ${year}-${month}-${day} ${runHourStr}:00Z`);
+                console.log('GRIB2 URL:', gribUrl);
+                console.log('TiTiler URL:', hrrrUrl);
 
                 // Add load/error detection for the image
                 hrrrOverlay.once('load', function() {
@@ -207,13 +236,13 @@
                 hrrrOverlay.getElement()?.addEventListener('error', function(e) {
                     console.error('HRRR Alaska: Image failed to load');
                     console.error('Error details:', e);
-                    hrrrStatusEl.innerHTML = `<span style="color: red;" title="Image failed to load from NOAA">Failed</span>`;
-                    statusEl.innerHTML = `<span style="color: red;">HRRR Alaska unavailable</span><br><small>NOAA service not responding. Using NEXRAD only.</small>`;
+                    hrrrStatusEl.innerHTML = `<span style="color: red;" title="Image failed to load">Failed</span>`;
+                    statusEl.innerHTML = `<span style="color: red;">HRRR Alaska unavailable</span><br><small>Data may not be available yet. Using NEXRAD.</small>`;
                 });
 
             } catch (error) {
                 console.error('Error loading HRRR Alaska:', error);
-                hrrrStatusEl.innerHTML = `<span style="color: gray;" title="Service may be unavailable">Unavailable</span>`;
+                hrrrStatusEl.innerHTML = `<span style="color: gray;" title="Error occurred">Unavailable</span>`;
             }
         }
 

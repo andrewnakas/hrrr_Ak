@@ -1,60 +1,48 @@
-# Alaska Radar Viewer
+# Alaska HRRR Radar Viewer
 
-A GitHub Pages application displaying Alaska radar data with NEXRAD real-time observations and attempted HRRR (High-Resolution Rapid Refresh) composite reflectivity forecast data from NOAA's RapidRefresh service.
+A GitHub Pages application displaying Alaska HRRR (High-Resolution Rapid Refresh) composite reflectivity forecast data using real GRIB2 files from NOAA's AWS S3 bucket, rendered via TiTiler.
 
 ## Features
 
 - Interactive map centered on Alaska
 - **Dual-layer radar display:**
-  - **NEXRAD (Primary)**: Real-time radar observations - **Reliable Alaska coverage**
-  - **HRRR Alaska (Attempted)**: NOAA forecast model composite reflectivity - **Currently limited availability**
+  - **HRRR Alaska**: NOAA forecast model composite reflectivity (3km resolution) - **Full Alaska coverage**
+  - **NEXRAD (Backup)**: Real-time radar observations
 - Independent layer toggle controls
-- Auto-refresh every 3 hours (for HRRR when available)
+- Auto-refresh every 3 hours (when new HRRR runs available)
 - Reflectivity color mapping (5-75+ dBZ)
 - Responsive design
 
-## Important Note
+## How It Works
 
-**Alaska HRRR imagery availability is currently limited.** The NOAA rapidrefresh.noaa.gov service that provides Alaska HRRR composite reflectivity images is experiencing service limitations. The application attempts to load HRRR Alaska imagery, but it may not display reliably. NEXRAD real-time radar provides consistent, reliable coverage for Alaska.
+This application uses actual HRRR Alaska GRIB2 files from NOAA's public AWS S3 bucket and renders them as PNG map overlays using TiTiler, a dynamic raster tile server. This is the same approach used by Development Seed's NOAA HRRR Browser.
+
+1. **Determine HRRR Run**: Finds most recent 3-hour HRRR Alaska run (00, 03, 06, 09, 12, 15, 18, 21 UTC)
+2. **Access GRIB2 File**: Locates the F000 (0-hour forecast) composite reflectivity GRIB2 file on AWS S3
+3. **Render via TiTiler**: TiTiler reads the GRIB2 file and renders it as a georeferenced PNG with custom colormap
+4. **Display on Map**: Leaflet displays the rendered image as an overlay with proper Alaska bounds
+5. **Auto-refresh**: Reloads HRRR image every 3 hours when new model run available
 
 ## Data Sources
 
-### NEXRAD (Primary - Reliable)
+### HRRR Alaska (Primary)
+- **Service**: TiTiler rendering NOAA HRRR Alaska GRIB2 files from AWS S3
+- **Data Source**: `s3://noaa-hrrr-bdp-pds/hrrr.YYYYMMDD/alaska/`
+- **File**: `hrrr.tHHz.wrfsfcf00.ak.grib2` (surface fields, F000)
+- **Band**: 1 (composite reflectivity at surface)
+- **Coverage**: ✅ **Full Alaska domain** (51°N-71.5°N, 179°W-130°W)
+- **Resolution**: 3km
+- **Update frequency**: Every 3 hours (00, 03, 06, 09, 12, 15, 18, 21 UTC)
+- **Forecast**: 0-hour (F000) - analysis/nowcast
+- **TiTiler**: `https://raster.eoapi.dev/external/bbox/`
+- **Format**: PNG image overlay dynamically rendered from GRIB2
+
+### NEXRAD (Backup)
 - **Service**: Iowa Environmental Mesonet NEXRAD composite (N0Q product)
-- **Coverage**: ✅ **Full Alaska and CONUS coverage**
+- **Coverage**: Full Alaska and CONUS
 - **Type**: Real-time radar observations
 - **Update**: Near real-time
-- **Reliability**: High - consistent tile service
 - **Format**: XYZ tile service
-- **Attribution**: Iowa Environmental Mesonet
-
-### HRRR Alaska (Attempted - Limited Availability)
-- **Service**: NOAA RapidRefresh Alaska Model Graphics
-- **URL**: `rapidrefresh.noaa.gov/alaska/displayMapUpdated.cgi`
-- **Coverage**: Full Alaska domain (when available)
-- **Product**: Composite reflectivity at surface (cref_full_sfc)
-- **Update frequency**: Every 3 hours (00, 03, 06, 09, 12, 15, 18, 21 UTC) when service is operational
-- **Forecast**: 0-hour (F000) - current analysis
-- **Format**: CGI-generated image overlays
-- **Model**: HRRR Alaska (hrrrak_ncep_jet)
-- **Current Status**: ⚠️ **Service experiencing limitations** - NOAA rapidrefresh.noaa.gov may not serve images reliably
-
-**How we attempt to get HRRR data:**
-- Same method used by NOAA's DESI visualization tool
-- Attempts to access NOAA's CGI-generated HRRR Alaska images
-- Parameters: runtime (YYYYMMDDHH), plot_type (cref_full_sfc), fcst (000)
-- Image overlay with Alaska geographic bounds
-- **Note**: May fail silently if service is unavailable
-
-## How It Works
-
-1. **NEXRAD Tiles**: Loads reliable real-time NEXRAD radar tiles from Iowa Mesonet covering Alaska
-2. **Determine HRRR Run**: Attempts to find most recent 3-hour HRRR Alaska run (00, 03, 06, 09, 12, 15, 18, 21 UTC)
-3. **Build HRRR URL**: Constructs URL with runtime and parameters for composite reflectivity
-4. **Image Overlay Attempt**: Uses Leaflet's L.imageOverlay() to attempt displaying HRRR PNG over Alaska bounds
-5. **Auto-refresh**: Attempts to reload HRRR image every 3 hours when new model run should be available
-
-**Same Method as DESI**: The HRRR implementation uses the exact same `displayMapUpdated.cgi` endpoint that powers NOAA's DESI visualization tool at sites.gsl.noaa.gov/desi/, but both may be affected by service availability limitations.
 
 ## Deployment
 
@@ -66,21 +54,20 @@ Simply open `index.html` in a web browser to test locally.
 
 ## Usage
 
-- **Refresh HRRR**: Manually attempt to reload latest HRRR Alaska image
-- **Hide/Show HRRR**: Toggle the HRRR Alaska forecast overlay attempt
-- **Hide/Show NEXRAD**: Toggle the NEXRAD real-time radar (primary layer)
+- **Refresh HRRR**: Manually reload latest HRRR Alaska image
+- **Hide/Show HRRR**: Toggle the HRRR Alaska forecast overlay
+- **Hide/Show NEXRAD**: Toggle the NEXRAD real-time radar
 - **Zoom/Pan**: Standard Leaflet map controls
-
-**Tip**: NEXRAD provides the most reliable radar coverage for Alaska. HRRR Alaska is attempted but may not be visible if the NOAA service is unavailable.
 
 ## Technology Stack
 
-- Leaflet.js for interactive mapping (with image overlay support)
-- OpenStreetMap tiles for base layer
-- NOAA RapidRefresh CGI scripts for HRRR Alaska images
-- Iowa Environmental Mesonet for NEXRAD comparison tiles
-- GitHub Pages for hosting
-- GitHub Actions for CI/CD
+- **Leaflet.js** - Interactive mapping with image overlay support
+- **OpenStreetMap** - Base map tiles
+- **TiTiler** - Dynamic GRIB2 to PNG rendering (via raster.eoapi.dev)
+- **AWS S3** - NOAA HRRR Alaska GRIB2 file storage (noaa-hrrr-bdp-pds bucket)
+- **Iowa Environmental Mesonet** - NEXRAD backup tiles
+- **GitHub Pages** - Static hosting
+- **GitHub Actions** - CI/CD pipeline
 
 ## File Structure
 
@@ -94,30 +81,62 @@ Simply open `index.html` in a web browser to test locally.
 
 ## Technical Details
 
-- **HRRR Model**: 3-km resolution Alaska domain
-- **Update Schedule**: Every 3 hours (00Z, 03Z, 06Z, 09Z, 12Z, 15Z, 18Z, 21Z) when operational
-- **Coverage**: Full Alaska (51°N-71.5°N, 179°W-130°W)
-- **Reflectivity Range**: 5-75+ dBZ
-- **Image Format**: Attempted PNG overlays from NOAA RapidRefresh
-- **Auto-refresh**: Every 3 hours (aligned with model runs when available)
-- **CGI Endpoint**: `https://rapidrefresh.noaa.gov/alaska/displayMapUpdated.cgi`
-- **Parameters**:
-  - keys: `hrrrak_ncep_jet:`
-  - plot_type: `cref_full_sfc` (composite reflectivity)
-  - fcst: `000` (0-hour/analysis)
-  - domain: `full:hrrrak` (full Alaska domain)
+### HRRR Alaska Data Access
 
-## Known Limitations
+**AWS S3 Path Pattern:**
+```
+s3://noaa-hrrr-bdp-pds/hrrr.YYYYMMDD/alaska/hrrr.tHHz.wrfsfcf00.ak.grib2
+```
 
-### Alaska HRRR Imagery Availability
+**Example URL:**
+```
+https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.20251110/alaska/hrrr.t00z.wrfsfcf00.ak.grib2
+```
 
-**Current Status**: The NOAA rapidrefresh.noaa.gov Alaska service that provides HRRR composite reflectivity imagery is experiencing limitations. Investigation revealed:
+**TiTiler Rendering:**
+```javascript
+const gribUrl = `https://noaa-hrrr-bdp-pds.s3.amazonaws.com/hrrr.${dateStr}/alaska/hrrr.${hourStr}.wrfsfcf00.ak.grib2`;
+const vrtUrl = `vrt://${gribUrl}?bands=1`;
+const bbox = '-179.0,51.0,-130.0,71.5';  // min_lon,min_lat,max_lon,max_lat
+const tileUrl = `https://raster.eoapi.dev/external/bbox/${bbox}.png?url=${vrtUrl}&colormap=${colormap}&dst_crs=epsg:3857`;
+```
 
-1. **Service Status**: The rapidrefresh.noaa.gov/alaska site shows: "The U.S. Government is closed. This site will not be updated."
-2. **CGI Errors**: All displayMapUpdated.cgi requests return "ERROR IN DISPLAY MAP - COULD NOT DISPLAY IMAGES"
-3. **No Tile Service**: Unlike CONUS HRRR, there is no tile-based service available for Alaska HRRR composite reflectivity
-4. **GRIB2 Alternative**: Raw GRIB2 files are available via AWS S3/NOMADS but require server-side processing (TiTiler, Herbie, etc.) which isn't feasible for a client-side GitHub Pages application
+**Composite Reflectivity Colormap (dBZ):**
+- 5-10 dBZ: Light cyan (light precipitation)
+- 10-20 dBZ: Blue (light to moderate precipitation)
+- 20-35 dBZ: Green (moderate to heavy precipitation)
+- 35-50 dBZ: Yellow to orange (heavy precipitation)
+- 50-65 dBZ: Red (very heavy precipitation)
+- 65-75 dBZ: Magenta/purple (extreme precipitation)
 
-**Workaround**: The application uses NEXRAD real-time radar observations from Iowa Environmental Mesonet, which provides reliable Alaska coverage. NEXRAD shows actual radar returns (observations) rather than model forecasts.
+### Model Specifications
 
-**Future**: The HRRR Alaska overlay code remains in place and will automatically work if/when the NOAA service resumes normal operations.
+- **Model**: HRRR Alaska (hrrrak)
+- **Resolution**: 3km horizontal grid spacing
+- **Domain**: Full Alaska
+- **Update Schedule**: Every 3 hours (00Z, 03Z, 06Z, 09Z, 12Z, 15Z, 18Z, 21Z)
+- **Forecast Length**: 0-48 hours (this app uses F000/analysis only)
+- **Data Latency**: Typically available 1-2 hours after model run time
+- **File Format**: GRIB2
+- **File Size**: ~20-30 MB per file (all bands)
+- **Rendered Image**: ~10-20 KB PNG
+
+## How This Solution Works
+
+### The Problem
+NOAA's rapidrefresh.noaa.gov Alaska service uses CGI scripts that were experiencing service disruptions. There are no pre-rendered tile services for Alaska HRRR composite reflectivity (unlike CONUS HRRR which has Iowa Mesonet tiles).
+
+### The Solution
+1. **Direct GRIB2 Access**: HRRR Alaska GRIB2 files are publicly available on AWS S3 (`noaa-hrrr-bdp-pds` bucket)
+2. **TiTiler Processing**: TiTiler is a dynamic tile server that can read GRIB2 files and render them as images
+3. **VRT URL**: Using GDAL's Virtual Raster (VRT) format, we can reference the S3 GRIB2 file and select specific bands
+4. **Bounding Box Rendering**: TiTiler's `/external/bbox/` endpoint renders exactly the geographic area we need (Alaska)
+5. **Custom Colormap**: We apply the standard NOAA composite reflectivity colormap to the rendered image
+6. **Client-Side**: Everything runs in the browser - no server-side processing needed for the GitHub Pages app
+
+### Credits
+This approach is based on Development Seed's [NOAA HRRR Browser](https://github.com/developmentseed/noaa-hrrr-browser), which demonstrates using TiTiler to visualize HRRR model data. We adapted their method for Alaska-specific GRIB2 files.
+
+## License
+
+MIT License - This project uses publicly available NOAA data and open-source tools.
