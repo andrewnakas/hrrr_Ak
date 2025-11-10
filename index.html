@@ -85,10 +85,10 @@
 <body>
     <div id="map"></div>
     <div class="info-panel">
-        <h3>Alaska HRRR Radar Viewer</h3>
-        <p><strong>HRRR Alaska:</strong> <span id="hrrr-status">Loading...</span></p>
-        <p><strong>NEXRAD (Backup):</strong> <span id="nexrad-status">Loading...</span></p>
-        <p id="status">Initializing...</p>
+        <h3>Alaska Radar Viewer</h3>
+        <p><strong>NEXRAD (Real-time):</strong> <span id="nexrad-status">Loading...</span></p>
+        <p><strong>HRRR Alaska (Forecast):</strong> <span id="hrrr-status">Checking...</span></p>
+        <p id="status" style="font-size: 11px; color: #888; margin-top: 8px;">Note: HRRR Alaska imagery from NOAA may be unavailable due to service limitations. NEXRAD provides reliable real-time radar coverage.</p>
         <div class="controls">
             <button id="refresh" onclick="refreshData()">Refresh HRRR</button>
             <button id="toggle-hrrr" onclick="toggleHRRR()">Hide HRRR</button>
@@ -191,13 +191,15 @@
                     hrrrOverlay.addTo(map);
                 }
 
-                hrrrStatusEl.innerHTML = `<span style="color: green;">${year}-${month}-${day} ${runHourStr}:00Z</span>`;
-                statusEl.innerHTML = `<span style="color: green;">HRRR Alaska loaded!</span><br><small>F000 composite reflectivity</small>`;
+                hrrrStatusEl.innerHTML = `<span style="color: orange;" title="Attempting ${year}-${month}-${day} ${runHourStr}:00Z">Attempted</span>`;
+
+                // Note: rapidrefresh.noaa.gov may not serve images reliably
+                // The overlay attempts to load but may fail silently
+                console.log(`HRRR Alaska: Attempting ${year}-${month}-${day} ${runHourStr}:00Z`);
 
             } catch (error) {
                 console.error('Error loading HRRR Alaska:', error);
-                hrrrStatusEl.innerHTML = `<span style="color: red;">Error</span>`;
-                statusEl.innerHTML = `<span style="color: red;">HRRR unavailable</span><br><small>${error.message}</small>`;
+                hrrrStatusEl.innerHTML = `<span style="color: gray;" title="Service may be unavailable">Unavailable</span>`;
             }
         }
 
