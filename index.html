@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alaska HRRR Radar Viewer</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-distortableimage@1.3.1/dist/leaflet.distortableimage.css" />
     <style>
         body {
             margin: 0;
@@ -112,6 +113,7 @@
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-distortableimage@1.3.1/dist/leaflet.distortableimage.js"></script>
     <script>
         // Initialize map centered on Alaska
         const map = L.map('map').setView([64.0, -152.0], 5);
@@ -268,20 +270,32 @@
                     // Convert canvas to data URL
                     const combinedImageUrl = canvas.toDataURL('image/png');
 
-                    // Create single combined overlay
-                    hrrrOverlay = L.imageOverlay(combinedImageUrl, boundsCombined, {
+                    // Define corners for distortable image (matching HRRR grid boundary)
+                    // Using reference bounds from Alaska_HRRR_Leaflet_Alignment project
+                    // Corners in Z-order: NW, NE, SW, SE
+                    const corners = [
+                        L.latLng(69.55206432516226, -195.93090688492023),  // NW (top-left)
+                        L.latLng(69.55206432516226, -126.2019605906281),   // NE (top-right)
+                        L.latLng(51.23417834802149, -195.93090688492023),  // SW (bottom-left)
+                        L.latLng(51.23417834802149, -126.2019605906281)    // SE (bottom-right)
+                    ];
+
+                    // Create distortable image overlay with perspective transform
+                    hrrrOverlay = L.distortableImageOverlay(combinedImageUrl, {
                         opacity: 0.7,
-                        attribution: 'NOAA HRRR Alaska via TiTiler',
-                        className: 'hrrr-debug-border'
+                        corners: corners,
+                        mode: 'lock',  // Lock editing mode
+                        interactive: false
                     });
 
                     if (hrrrVisible) {
                         hrrrOverlay.addTo(map);
                     }
 
-                    console.log('HRRR Alaska: Combined image created and loaded!');
+                    console.log('HRRR Alaska: Combined image created with distortable overlay!');
+                    console.log('Corner positions (NW, NE, SW, SE):', corners.map(c => `[${c.lat}, ${c.lng}]`).join(', '));
                     hrrrStatusEl.innerHTML = `<span style="color: green;" title="${year}-${month}-${day} ${runHourStr}:00Z">Active</span>`;
-                    statusEl.innerHTML = `<span style="color: green;">HRRR Alaska loaded!</span><br><small>F000 composite reflectivity - ${year}-${month}-${day} ${runHourStr}:00Z</small>`;
+                    statusEl.innerHTML = `<span style="color: green;">HRRR Alaska loaded!</span><br><small>F000 composite reflectivity - ${year}-${month}-${day} ${runHourStr}:00Z (distorted for projection)</small>`;
                 }
 
                 imgMain.onload = function() {
@@ -313,7 +327,7 @@
                 imgDateline.src = hrrrUrlDateline;
 
                 hrrrStatusEl.innerHTML = `<span style="color: orange;" title="Loading ${year}-${month}-${day} ${runHourStr}:00Z">Loading...</span>`;
-                statusEl.innerHTML = `<span style="color: orange;">Loading HRRR Alaska...</span><br><small>Combining images into single overlay</small>`;
+                statusEl.innerHTML = `<span style="color: orange;">Loading HRRR Alaska...</span><br><small>Combining images with projection alignment</small>`;
 
                 console.log(`HRRR Alaska: Loading ${year}-${month}-${day} ${runHourStr}:00Z`);
                 console.log('GRIB2 URL:', gribUrl);
