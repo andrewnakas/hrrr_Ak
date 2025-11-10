@@ -205,20 +205,22 @@
                 ];
                 const encodedColormap = encodeURIComponent(JSON.stringify(colormap));
 
-                // Alaska bounds (min_lon, min_lat, max_lon, max_lat)
-                // Fetch two separate images and combine into single canvas overlay
+                // Alaska bounds - use ACTUAL HRRR Alaska grid extent from GRIB2 boundary
+                // Full grid: -203.56° to -115.78° longitude, 41.61° to 77.09° latitude
+                // Split at dateline to handle coordinate wrapping
 
-                // Main Alaska: -180°W to -130°W (east side, includes most of Alaska)
-                const bboxMain = '-180.0,51.0,-130.0,71.5';
+                // Main Alaska: -180°W to -115.78°W (eastern portion including most of state)
+                const bboxMain = '-180.0,41.61,-115.78,77.09';
                 // Use bilinear resampling for better polar->mercator reprojection quality
-                const hrrrUrlMain = `https://raster.eoapi.dev/external/bbox/${bboxMain}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857&resampling=bilinear&width=1024&height=1024`;
+                const hrrrUrlMain = `https://raster.eoapi.dev/external/bbox/${bboxMain}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857&resampling=bilinear&width=1400&height=800`;
 
-                // Dateline crossing: 170°E to 180°E (westernmost Aleutian Islands - Attu, Shemya, etc.)
-                const bboxDateline = '170.0,51.0,180.0,71.5';
-                const hrrrUrlDateline = `https://raster.eoapi.dev/external/bbox/${bboxDateline}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857&resampling=bilinear&width=256&height=1024`;
+                // Dateline crossing: 156.44°E to 180°E (westernmost Aleutian Islands)
+                // -203.56° wraps to 156.44° in 0-360 notation
+                const bboxDateline = '156.44,41.61,180.0,77.09';
+                const hrrrUrlDateline = `https://raster.eoapi.dev/external/bbox/${bboxDateline}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857&resampling=bilinear&width=500&height=800`;
 
-                // Combined bounds covering both images: -190°W to -130°W
-                const boundsCombined = [[51.0, -190.0], [71.5, -130.0]];
+                // Combined bounds: use actual GRIB2 grid extent
+                const boundsCombined = [[41.61, -203.56], [77.09, -115.78]];
 
                 // Remove old overlays
                 if (hrrrOverlay) {
@@ -240,13 +242,13 @@
                 function createCombinedOverlay() {
                     if (!mainImageLoaded || !datelineImageLoaded) return;
 
-                    // Calculate canvas dimensions
-                    // Main image covers 50° longitude (-180 to -130)
-                    // Dateline image covers 10° longitude (-190 to -180)
-                    // Total span: 60° longitude (-190 to -130)
-                    const totalLonSpan = 60; // degrees
-                    const mainLonSpan = 50; // degrees
-                    const datelineLonSpan = 10; // degrees
+                    // Calculate canvas dimensions using ACTUAL HRRR Alaska grid extent
+                    // Main image covers 64.22° longitude (-180 to -115.78)
+                    // Dateline image covers 23.56° longitude (156.44E to 180E, or -203.56 to -180)
+                    // Total span: 87.78° longitude (-203.56 to -115.78)
+                    const totalLonSpan = 87.78; // degrees
+                    const mainLonSpan = 64.22; // degrees
+                    const datelineLonSpan = 23.56; // degrees
 
                     // Use main image height as reference
                     const canvasHeight = imgMain.height;
@@ -271,9 +273,9 @@
                     // Convert canvas to data URL
                     const combinedImageUrl = canvas.toDataURL('image/png');
 
-                    // Create single combined overlay with bounds from reference project
-                    // Using continuous bounds that match the grid extent
-                    const referenceBounds = [[51.23417834802149, -195.93090688492023], [69.55206432516226, -126.2019605906281]];
+                    // Create single combined overlay with ACTUAL GRIB2 grid bounds
+                    // From boundary polygon: -203.56° to -115.78° lon, 41.61° to 77.09° lat
+                    const referenceBounds = [[41.61, -203.56], [77.09, -115.78]];
 
                     hrrrOverlay = L.imageOverlay(combinedImageUrl, referenceBounds, {
                         opacity: 0.7,
