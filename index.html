@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alaska HRRR Radar Viewer</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/proj4@2.9.0/dist/proj4.js"></script>
+    <script src="https://unpkg.com/proj4leaflet@1.0.2/src/proj4leaflet.js"></script>
     <style>
         body {
             margin: 0;
@@ -208,11 +210,12 @@
 
                 // Main Alaska: -180°W to -130°W (east side, includes most of Alaska)
                 const bboxMain = '-180.0,51.0,-130.0,71.5';
-                const hrrrUrlMain = `https://raster.eoapi.dev/external/bbox/${bboxMain}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857`;
+                // Use bilinear resampling for better polar->mercator reprojection quality
+                const hrrrUrlMain = `https://raster.eoapi.dev/external/bbox/${bboxMain}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857&resampling=bilinear&width=1024&height=1024`;
 
                 // Dateline crossing: 170°E to 180°E (westernmost Aleutian Islands - Attu, Shemya, etc.)
                 const bboxDateline = '170.0,51.0,180.0,71.5';
-                const hrrrUrlDateline = `https://raster.eoapi.dev/external/bbox/${bboxDateline}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857`;
+                const hrrrUrlDateline = `https://raster.eoapi.dev/external/bbox/${bboxDateline}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857&resampling=bilinear&width=256&height=1024`;
 
                 // Combined bounds covering both images: -190°W to -130°W
                 const boundsCombined = [[51.0, -190.0], [71.5, -130.0]];
@@ -234,177 +237,7 @@
                 let mainImageLoaded = false;
                 let datelineImageLoaded = false;
 
-                // 4-point perspective transformation
-                function applyPerspectiveTransform(sourceCanvas, corners) {
-                    // Image bounds in lat/lon
-                    const imageBounds = {
-                        minLat: 51.0,
-                        maxLat: 71.5,
-                        minLon: -190.0,
-                        maxLon: -130.0
-                    };
-
-                    // Convert lat/lon corners to normalized coordinates [0,1]
-                    const normalizePoint = (lat, lon) => {
-                        return {
-                            x: (lon - imageBounds.minLon) / (imageBounds.maxLon - imageBounds.minLon),
-                            y: 1 - (lat - imageBounds.minLat) / (imageBounds.maxLat - imageBounds.minLat) // Flip Y
-                        };
-                    };
-
-                    // Normalize the boundary corners to [0,1] space
-                    const destCorners = {
-                        bl: normalizePoint(corners.bottomLeft.lat, corners.bottomLeft.lon),
-                        br: normalizePoint(corners.bottomRight.lat, corners.bottomRight.lon),
-                        tr: normalizePoint(corners.topRight.lat, corners.topRight.lon),
-                        tl: normalizePoint(corners.topLeft.lat, corners.topLeft.lon)
-                    };
-
-                    console.log('Normalized dest corners:', destCorners);
-
-                    // Create output canvas with same dimensions
-                    const outputCanvas = document.createElement('canvas');
-                    outputCanvas.width = sourceCanvas.width;
-                    outputCanvas.height = sourceCanvas.height;
-                    const outCtx = outputCanvas.getContext('2d');
-
-                    // Get source image data
-                    const srcCtx = sourceCanvas.getContext('2d');
-                    const srcData = srcCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
-                    const outData = outCtx.createImageData(sourceCanvas.width, sourceCanvas.height);
-
-                    const w = sourceCanvas.width;
-                    const h = sourceCanvas.height;
-
-                    // Source rectangle corners (normalized [0,1])
-                    const srcCorners = {
-                        bl: {x: 0, y: 1},
-                        br: {x: 1, y: 1},
-                        tr: {x: 1, y: 0},
-                        tl: {x: 0, y: 0}
-                    };
-
-                    // Compute perspective transformation matrix using homography
-                    // We need to map srcCorners -> destCorners
-                    const transform = computeHomography(
-                        srcCorners.bl, srcCorners.br, srcCorners.tr, srcCorners.tl,
-                        destCorners.bl, destCorners.br, destCorners.tr, destCorners.tl
-                    );
-
-                    // Apply transformation: for each output pixel, find corresponding source pixel
-                    for (let y = 0; y < h; y++) {
-                        for (let x = 0; x < w; x++) {
-                            // Normalized output position
-                            const outX = x / w;
-                            const outY = y / h;
-
-                            // Apply inverse perspective transform to find source position
-                            const src = applyInverseHomography(transform, outX, outY);
-
-                            // Sample from source image
-                            const srcX = Math.round(src.x * w);
-                            const srcY = Math.round(src.y * h);
-
-                            if (srcX >= 0 && srcX < w && srcY >= 0 && srcY < h) {
-                                const srcIdx = (srcY * w + srcX) * 4;
-                                const outIdx = (y * w + x) * 4;
-
-                                outData.data[outIdx] = srcData.data[srcIdx];
-                                outData.data[outIdx + 1] = srcData.data[srcIdx + 1];
-                                outData.data[outIdx + 2] = srcData.data[srcIdx + 2];
-                                outData.data[outIdx + 3] = srcData.data[srcIdx + 3];
-                            }
-                        }
-                    }
-
-                    outCtx.putImageData(outData, 0, 0);
-                    return outputCanvas;
-                }
-
-                // Compute homography matrix from 4 point correspondences
-                function computeHomography(s1, s2, s3, s4, d1, d2, d3, d4) {
-                    // Simplified approach: use bilinear interpolation
-                    // This is an approximation, not true perspective
-                    return {
-                        src: [s1, s2, s3, s4],
-                        dst: [d1, d2, d3, d4]
-                    };
-                }
-
-                // Apply inverse transformation using bilinear interpolation
-                function applyInverseHomography(transform, px, py) {
-                    // Given a point (px, py) in destination quad coordinates [0,1]
-                    // Find the corresponding (u, v) in source quad [0,1] x [0,1]
-
-                    const dst = transform.dst; // [bl, br, tr, tl]
-
-                    // Bilinear forward mapping:
-                    // P(u,v) = (1-v)[(1-u)·tl + u·tr] + v[(1-u)·bl + u·br]
-                    // We need to solve for (u,v) given P=(px,py)
-
-                    // Use iterative method (Newton's method) to find (u,v)
-                    let u = 0.5, v = 0.5; // Initial guess
-
-                    for (let iter = 0; iter < 10; iter++) {
-                        // Compute current point
-                        const P = bilinearInterpolate(dst[3], dst[2], dst[0], dst[1], u, v);
-
-                        // Compute error
-                        const dx = P.x - px;
-                        const dy = P.y - py;
-
-                        if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) {
-                            break; // Converged
-                        }
-
-                        // Compute Jacobian (partial derivatives)
-                        const eps = 0.001;
-                        const Pu = bilinearInterpolate(dst[3], dst[2], dst[0], dst[1], u + eps, v);
-                        const Pv = bilinearInterpolate(dst[3], dst[2], dst[0], dst[1], u, v + eps);
-
-                        const dudx = (Pu.x - P.x) / eps;
-                        const dudy = (Pu.y - P.y) / eps;
-                        const dvdx = (Pv.x - P.x) / eps;
-                        const dvdy = (Pv.y - P.y) / eps;
-
-                        // Inverse Jacobian
-                        const det = dudx * dvdy - dudy * dvdx;
-                        if (Math.abs(det) < 0.0001) break;
-
-                        const du = (dvdy * (-dx) - dvdx * (-dy)) / det;
-                        const dv = (-dudy * (-dx) + dudx * (-dy)) / det;
-
-                        u += du;
-                        v += dv;
-
-                        // Clamp to valid range
-                        u = Math.max(0, Math.min(1, u));
-                        v = Math.max(0, Math.min(1, v));
-                    }
-
-                    // Return the source coordinate
-                    return {x: u, y: v};
-                }
-
-                // Bilinear interpolation helper
-                function bilinearInterpolate(tl, tr, bl, br, u, v) {
-                    // u: 0 = left, 1 = right
-                    // v: 0 = top, 1 = bottom
-                    const top = {
-                        x: (1 - u) * tl.x + u * tr.x,
-                        y: (1 - u) * tl.y + u * tr.y
-                    };
-                    const bottom = {
-                        x: (1 - u) * bl.x + u * br.x,
-                        y: (1 - u) * bl.y + u * br.y
-                    };
-                    return {
-                        x: (1 - v) * top.x + v * bottom.x,
-                        y: (1 - v) * top.y + v * bottom.y
-                    };
-                }
-
-                async function createCombinedOverlay() {
+                function createCombinedOverlay() {
                     if (!mainImageLoaded || !datelineImageLoaded) return;
 
                     // Calculate canvas dimensions
@@ -435,67 +268,27 @@
                     // Draw main image on the right
                     ctx.drawImage(imgMain, datelineWidth, 0, mainWidth, canvasHeight);
 
-                    // Load boundary data to apply perspective transform
-                    try {
-                        const response = await fetch('hrrr-grid-boundary.json');
-                        const boundaryData = await response.json();
-                        const boundary = boundaryData.boundary_polygon;
+                    // Convert canvas to data URL
+                    const combinedImageUrl = canvas.toDataURL('image/png');
 
-                        // Extract the 4 corner points from the boundary
-                        // Based on analysis: corners closest to image rectangle corners
-                        const corners = {
-                            bottomLeft: boundary[338],  // [51.22°N, -189.94°W]
-                            bottomRight: boundary[96],  // [51.83°N, -130.13°W]
-                            topRight: boundary[209],    // [77.05°N, -130.24°W]
-                            topLeft: boundary[258]      // [68.49°N, -188.45°W]
-                        };
+                    // Create single combined overlay with bounds from reference project
+                    // Using continuous bounds that match the grid extent
+                    const referenceBounds = [[51.23417834802149, -195.93090688492023], [69.55206432516226, -126.2019605906281]];
 
-                        console.log('Using 4-point perspective transform with corners:', corners);
+                    hrrrOverlay = L.imageOverlay(combinedImageUrl, referenceBounds, {
+                        opacity: 0.7,
+                        attribution: 'NOAA HRRR Alaska via TiTiler',
+                        className: 'hrrr-debug-border'
+                    });
 
-                        // Apply 4-point perspective transformation
-                        const transformedCanvas = applyPerspectiveTransform(canvas, corners);
-                        const transformedImageUrl = transformedCanvas.toDataURL('image/png');
-
-                        // Use the boundary corners for the image bounds
-                        // We need the bounding box that encompasses all 4 corners
-                        const minLat = Math.min(corners.bottomLeft.lat, corners.bottomRight.lat, corners.topLeft.lat, corners.topRight.lat);
-                        const maxLat = Math.max(corners.bottomLeft.lat, corners.bottomRight.lat, corners.topLeft.lat, corners.topRight.lat);
-                        const minLon = Math.min(corners.bottomLeft.lon, corners.bottomRight.lon, corners.topLeft.lon, corners.topRight.lon);
-                        const maxLon = Math.max(corners.bottomLeft.lon, corners.bottomRight.lon, corners.topLeft.lon, corners.topRight.lon);
-
-                        const transformedBounds = [[minLat, minLon], [maxLat, maxLon]];
-
-                        hrrrOverlay = L.imageOverlay(transformedImageUrl, transformedBounds, {
-                            opacity: 0.7,
-                            attribution: 'NOAA HRRR Alaska via TiTiler',
-                            className: 'hrrr-debug-border'
-                        });
-
-                        if (hrrrVisible) {
-                            hrrrOverlay.addTo(map);
-                        }
-
-                        console.log('HRRR Alaska: Perspective-transformed image created!');
-                        console.log('Transform bounds:', transformedBounds);
-                        hrrrStatusEl.innerHTML = `<span style="color: green;" title="${year}-${month}-${day} ${runHourStr}:00Z">Active</span>`;
-                        statusEl.innerHTML = `<span style="color: green;">HRRR Alaska loaded!</span><br><small>F000 composite reflectivity - ${year}-${month}-${day} ${runHourStr}:00Z</small>`;
-
-                    } catch (error) {
-                        console.error('Error applying perspective transform:', error);
-                        // Fallback to original method
-                        const combinedImageUrl = canvas.toDataURL('image/png');
-                        const referenceBounds = [[51.23417834802149, -195.93090688492023], [69.55206432516226, -126.2019605906281]];
-
-                        hrrrOverlay = L.imageOverlay(combinedImageUrl, referenceBounds, {
-                            opacity: 0.7,
-                            attribution: 'NOAA HRRR Alaska via TiTiler',
-                            className: 'hrrr-debug-border'
-                        });
-
-                        if (hrrrVisible) {
-                            hrrrOverlay.addTo(map);
-                        }
+                    if (hrrrVisible) {
+                        hrrrOverlay.addTo(map);
                     }
+
+                    console.log('HRRR Alaska: Combined image created!');
+                    console.log('Reference bounds:', referenceBounds);
+                    hrrrStatusEl.innerHTML = `<span style="color: green;" title="${year}-${month}-${day} ${runHourStr}:00Z">Active</span>`;
+                    statusEl.innerHTML = `<span style="color: green;">HRRR Alaska loaded!</span><br><small>F000 composite reflectivity - ${year}-${month}-${day} ${runHourStr}:00Z</small>`;
                 }
 
                 imgMain.onload = function() {
