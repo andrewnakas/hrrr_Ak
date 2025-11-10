@@ -20,8 +20,10 @@ This application uses actual HRRR Alaska GRIB2 files from NOAA's public AWS S3 b
 1. **Determine HRRR Run**: Finds most recent 3-hour HRRR Alaska run (00, 03, 06, 09, 12, 15, 18, 21 UTC)
 2. **Access GRIB2 File**: Locates the F000 (0-hour forecast) composite reflectivity GRIB2 file on AWS S3
 3. **Render via TiTiler**: TiTiler reads the GRIB2 file and renders it as a georeferenced PNG with custom colormap
-4. **Display on Map**: Leaflet displays the rendered image as an overlay with proper Alaska bounds
-5. **Auto-refresh**: Reloads HRRR image every 3 hours when new model run available
+4. **Display on Map**: Leaflet displays the rendered images as two overlays:
+   - **Main Alaska**: -179°W to -130°W (mainland and most Aleutian Islands)
+   - **Dateline Crossing**: 172°E to 180°E (westernmost Aleutian Islands past the International Date Line)
+5. **Auto-refresh**: Reloads HRRR images every 3 hours when new model run available
 
 ## Data Sources
 
@@ -30,7 +32,7 @@ This application uses actual HRRR Alaska GRIB2 files from NOAA's public AWS S3 b
 - **Data Source**: `s3://noaa-hrrr-bdp-pds/hrrr.YYYYMMDD/alaska/`
 - **File**: `hrrr.tHHz.wrfsfcf00.ak.grib2` (surface fields, F000)
 - **Band**: 1 (composite reflectivity at surface)
-- **Coverage**: ✅ **Full Alaska domain** (51°N-71.5°N, 179°W-130°W)
+- **Coverage**: ✅ **Full Alaska domain** (51°N-71.5°N, 172°E-130°W including dateline crossing)
 - **Resolution**: 3km
 - **Update frequency**: Every 3 hours (00, 03, 06, 09, 12, 15, 18, 21 UTC)
 - **Forecast**: 0-hour (F000) - analysis/nowcast
