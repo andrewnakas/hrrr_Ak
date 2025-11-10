@@ -1,13 +1,13 @@
 # Alaska Radar Viewer
 
-A GitHub Pages application that displays real-time NEXRAD radar observations for Alaska, with HRRR CONUS data available for comparison.
+A GitHub Pages application that displays real-time radar observations for Alaska using NOAA's official MRMS radar service and Iowa Environmental Mesonet data.
 
 ## Features
 
 - Interactive map centered on Alaska
 - **Dual-layer radar display:**
-  - **NEXRAD**: Real-time observations - **Primary Alaska coverage**
-  - **HRRR CONUS**: Forecast model data (limited/no Alaska coverage)
+  - **NOAA MRMS Radar**: Official real-time radar - **Full Alaska + CONUS coverage**
+  - **Iowa Mesonet NEXRAD**: Alternative real-time source for comparison
 - Independent layer toggle controls
 - Auto-refresh every 15 minutes
 - Reflectivity color mapping (5-75+ dBZ)
@@ -15,41 +15,42 @@ A GitHub Pages application that displays real-time NEXRAD radar observations for
 
 ## Data Sources
 
-### NEXRAD Real-Time Radar (Primary)
+### NOAA MRMS Radar (Primary)
+- **Service**: NOAA Weather Map Services WMS ImageServer
+- **Coverage**: ✅ **Alaska, CONUS, Caribbean, Guam, Hawaii**
+- **Data**: Multi-Radar Multi-Sensor (MRMS) algorithm
+- **Update frequency**: Every 10 minutes
+- **Window**: 4-hour moving window
+- **Protocol**: WMS 1.3.0 via Leaflet WMS layer
+
+**Why this works for Alaska:**
+- Official NOAA service explicitly includes Alaska coverage
+- Real-time radar composites from multiple sources
+- No CORS restrictions
+- Professional-grade reliability
+
+### Iowa Environmental Mesonet NEXRAD (Secondary)
 - Iowa Environmental Mesonet NEXRAD composite (N0Q product)
-- **Real-time observations**
-- **Full Alaska coverage**
-- Updates continuously
+- Real-time observations
+- Full Alaska and CONUS coverage
+- Alternative view for comparison
 
-### HRRR CONUS (Secondary)
-- Iowa Environmental Mesonet HRRR composite tiles
-- Composite reflectivity (REFC parameter)
-- Hourly model runs
-- **CONUS coverage only** - does not include Alaska
-- Auto-detects most recent available data
+## About Alaska HRRR Model Data
 
-## Important Note: Alaska HRRR Data
+HRRR forecast model data for Alaska exists but is **NOT available as pre-rendered tiles**. To access Alaska HRRR, see:
+- **Static images**: https://rapidrefresh.noaa.gov/alaska/ (web viewer)
+- **GRIB2 files**: AWS S3 `noaa-hrrr-bdp-pds` bucket (requires backend processing)
+- **Python access**: Use Herbie package to download GRIB2 files
 
-**Alaska HRRR model data is NOT available as pre-rendered tiles.**
-
-While NOAA produces HRRR forecasts for Alaska, they are only distributed as GRIB2 files (100+ MB) which require:
-- Server-side processing to extract and render
-- A tile generation service
-- Cannot be processed in the browser due to size and CORS restrictions
-
-To add Alaska HRRR support, you would need to:
-1. Set up a backend service to fetch GRIB2 files from AWS S3
-2. Parse GRIB2 and extract composite reflectivity
-3. Generate and serve tiles or WMS
-
-**For now, NEXRAD provides the best real-time Alaska radar coverage.**
+For browser-based visualization, the NOAA MRMS radar provides excellent real-time Alaska coverage.
 
 ## How It Works
 
-1. **Tile Loading**: Fetches pre-rendered HRRR composite reflectivity tiles
-2. **Availability Check**: Tries multiple recent hours to find the latest available data
-3. **Leaflet Display**: Shows tiles as overlay layers on the map
-4. **NEXRAD Layer**: Provides real-time baseline for comparison
+1. **WMS Layer**: Loads NOAA MRMS radar via WMS protocol with Leaflet
+2. **Alaska Coverage**: WMS service explicitly includes Alaska in coverage area
+3. **Tile Layer**: Iowa Mesonet NEXRAD loaded as standard XYZ tiles
+4. **Dual Display**: Both layers shown simultaneously with independent opacity controls
+5. **Auto-refresh**: Layers reload every 15 minutes to get latest data
 
 ## Deployment
 
@@ -61,16 +62,17 @@ Simply open `index.html` in a web browser to test locally.
 
 ## Usage
 
-- **Refresh HRRR**: Manually fetch latest HRRR Alaska GRIB2 data
-- **Hide/Show HRRR**: Toggle the HRRR forecast overlay
-- **Hide/Show NEXRAD**: Toggle the NEXRAD real-time radar
+- **Refresh All**: Manually reload both radar layers
+- **Hide/Show NOAA**: Toggle the NOAA MRMS radar overlay
+- **Hide/Show Iowa**: Toggle the Iowa Mesonet NEXRAD overlay
 - **Zoom/Pan**: Standard Leaflet map controls
 
 ## Technology Stack
 
-- Leaflet.js for interactive mapping
+- Leaflet.js for interactive mapping (with WMS support)
 - OpenStreetMap tiles for base layer
-- Iowa Environmental Mesonet for HRRR and NEXRAD tile services
+- NOAA Weather Map Services WMS for Alaska radar coverage
+- Iowa Environmental Mesonet for NEXRAD comparison layer
 - GitHub Pages for hosting
 - GitHub Actions for CI/CD
 
@@ -86,9 +88,10 @@ Simply open `index.html` in a web browser to test locally.
 
 ## Technical Details
 
-- **HRRR Data**: Pre-rendered composite reflectivity tiles
-- **Coverage**: CONUS (includes parts of Alaska)
+- **Primary Data**: NOAA MRMS radar via WMS ImageServer
+- **Coverage**: Alaska, CONUS, Caribbean, Guam, Hawaii
 - **Reflectivity Range**: 5-75+ dBZ
-- **Update Frequency**: Hourly (HRRR), Real-time (NEXRAD)
+- **Update Frequency**: Every 10 minutes (NOAA), Real-time (Iowa Mesonet)
 - **Auto-refresh**: Every 15 minutes
-- **Tile Format**: PNG tiles via XYZ tile service
+- **Formats**: WMS 1.3.0 (NOAA) + PNG XYZ tiles (Iowa Mesonet)
+- **Service URL**: `mapservices.weather.noaa.gov/eventdriven/services/radar/radar_base_reflectivity_time/ImageServer/WMSServer`

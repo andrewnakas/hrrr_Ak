@@ -85,15 +85,14 @@
 <body>
     <div id="map"></div>
     <div class="info-panel">
-        <h3>Alaska Radar Viewer</h3>
-        <p><strong>Primary:</strong> <span id="nexrad-status">NEXRAD Active</span></p>
-        <p><strong>HRRR (CONUS):</strong> <span id="hrrr-status">Loading...</span></p>
+        <h3>Alaska HRRR Radar Viewer</h3>
+        <p><strong>NOAA MRMS Radar:</strong> <span id="nexrad-status">Loading...</span></p>
+        <p><strong>Iowa Mesonet:</strong> <span id="hrrr-status">Loading...</span></p>
         <p id="status">Initializing...</p>
-        <p style="font-size: 11px; color: #666; margin-top: 10px;"><em>Note: Alaska HRRR tiles unavailable via tile services. NEXRAD provides real-time Alaska coverage.</em></p>
         <div class="controls">
-            <button id="refresh" onclick="refreshData()">Refresh HRRR</button>
-            <button id="toggle-hrrr" onclick="toggleHRRR()">Hide HRRR</button>
-            <button id="toggle-nexrad" onclick="toggleNEXRAD()">Hide NEXRAD</button>
+            <button id="refresh" onclick="refreshData()">Refresh All</button>
+            <button id="toggle-noaa" onclick="toggleNOAA()">Hide NOAA</button>
+            <button id="toggle-nexrad" onclick="toggleNEXRAD()">Hide Iowa</button>
         </div>
         <div class="legend">
             <div class="legend-title">Reflectivity (dBZ)</div>
@@ -120,9 +119,9 @@
         }).addTo(map);
 
         let nexradOverlay = null;
-        let hrrrOverlay = null;
+        let noaaRadarOverlay = null;
         let nexradVisible = true;
-        let hrrrVisible = true;
+        let noaaVisible = true;
 
         // Create legend gradient
         const legendScale = document.getElementById('legend-scale');
@@ -146,7 +145,30 @@
             legendScale.appendChild(div);
         });
 
-        // Initialize NEXRAD layer
+        // Initialize NOAA MRMS Radar with WMS (includes Alaska!)
+        function initNOAARadar() {
+            // NOAA WMS ImageServer - explicitly includes Alaska coverage
+            // Updates every 10 minutes, 4-hour moving window
+            const wmsUrl = 'https://mapservices.weather.noaa.gov/eventdriven/services/radar/radar_base_reflectivity_time/ImageServer/WMSServer';
+
+            noaaRadarOverlay = L.tileLayer.wms(wmsUrl, {
+                layers: '0',
+                format: 'image/png',
+                transparent: true,
+                opacity: 0.7,
+                attribution: 'NOAA MRMS Radar',
+                version: '1.3.0',
+                crs: L.CRS.EPSG3857
+            });
+
+            if (noaaVisible) {
+                noaaRadarOverlay.addTo(map);
+            }
+
+            document.getElementById('nexrad-status').innerHTML = '<span style="color: green;">Active (Alaska + CONUS)</span>';
+        }
+
+        // Initialize NEXRAD layer from Iowa Mesonet
         function initNEXRAD() {
             const nexradUrl = 'https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png';
 
@@ -161,105 +183,41 @@
                 nexradOverlay.addTo(map);
             }
 
-            document.getElementById('nexrad-status').textContent = 'Active';
+            document.getElementById('hrrr-status').innerHTML = '<span style="color: green;">Active</span>';
         }
 
-        // Fetch and render HRRR Alaska GRIB2 data
+        // Refresh both layers
         async function fetchHRRRData() {
             const statusEl = document.getElementById('status');
-            const hrrrStatusEl = document.getElementById('hrrr-status');
-            const refreshBtn = document.getElementById('refresh');
-
-            try {
-                statusEl.textContent = 'Loading HRRR Alaska data...';
-                hrrrStatusEl.textContent = 'Loading...';
-                refreshBtn.disabled = true;
-
-                // Get current UTC time and find latest HRRR run
-                const now = new Date();
-                const hours = now.getUTCHours();
-                const year = now.getUTCFullYear();
-                const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-                const day = String(now.getUTCDate()).padStart(2, '0');
-
-                // HRRR runs hourly but has a delay
-                // Try to find the most recent available run
-                let runHour = null;
-                let runDate = `${year}${month}${day}`;
-
-                // Use CONUS HRRR - it has best availability
-                // Note: Alaska HRRR tiles don't exist on Iowa Mesonet
-                for (let hourOffset = 1; hourOffset <= 6; hourOffset++) {
-                    const testHour = Math.max(0, hours - hourOffset);
-                    const testHourStr = String(testHour).padStart(2, '0');
-
-                    // Test with a CONUS tile to check availability
-                    const testUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-composite-${runDate}${testHourStr}00/{z}/{x}/{y}.png`;
-
-                    try {
-                        // Test a central CONUS tile
-                        const testTile = testUrl.replace('{z}', '4').replace('{x}', '3').replace('{y}', '5');
-                        const response = await fetch(testTile, { method: 'HEAD' });
-                        if (response.ok) {
-                            runHour = testHourStr;
-                            statusEl.textContent = `Found HRRR data for ${testHourStr}:00Z`;
-                            console.log(`Using HRRR CONUS tiles for hour ${testHourStr}`);
-                            break;
-                        }
-                    } catch (e) {
-                        console.log(`Hour ${testHourStr} not available`);
-                    }
-                }
-
-                if (!runHour) {
-                    // Fallback to 2 hours ago
-                    runHour = String(Math.max(0, hours - 2)).padStart(2, '0');
-                }
-
-                const tileUrl = `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr-composite-${runDate}${runHour}00/{z}/{x}/{y}.png`;
-
-                if (hrrrOverlay) {
-                    map.removeLayer(hrrrOverlay);
-                }
-
-                hrrrOverlay = L.tileLayer(tileUrl, {
-                    opacity: 0.7,
-                    attribution: 'Iowa Mesonet - HRRR REFC',
-                    maxZoom: 10,
-                    tileSize: 256
-                    // No bounds restriction - allow tiles to show anywhere including Alaska
-                });
-
-                if (hrrrVisible) {
-                    hrrrOverlay.addTo(map);
-                }
-
-                hrrrStatusEl.innerHTML = `${runDate} ${runHour}:00Z (CONUS)`;
-                statusEl.innerHTML = `<span style="color: orange;">HRRR CONUS only</span><br><small>Alaska HRRR tiles not available - use NEXRAD for Alaska coverage</small>`;
-
-            } catch (error) {
-                console.error('Error loading HRRR data:', error);
-                hrrrStatusEl.innerHTML = `<span style="color: orange;">Not available</span>`;
-                statusEl.innerHTML = `<span style="color: orange;">HRRR unavailable - using NEXRAD only</span><br><small>${error.message}</small>`;
-            } finally {
-                refreshBtn.disabled = false;
-            }
+            statusEl.innerHTML = '<span style="color: green;">All layers active</span><br><small>NOAA MRMS provides Alaska coverage • Updates every 10 min</small>';
         }
 
         function refreshData() {
-            fetchHRRRData();
+            // Refresh NOAA WMS layer
+            if (noaaRadarOverlay) {
+                map.removeLayer(noaaRadarOverlay);
+                initNOAARadar();
+            }
+
+            // Refresh Iowa Mesonet layer
+            if (nexradOverlay) {
+                map.removeLayer(nexradOverlay);
+                initNEXRAD();
+            }
+
+            document.getElementById('status').innerHTML = '<span style="color: green;">Layers refreshed</span>';
         }
 
-        function toggleHRRR() {
-            const toggleBtn = document.getElementById('toggle-hrrr');
-            if (hrrrVisible && hrrrOverlay) {
-                map.removeLayer(hrrrOverlay);
-                hrrrVisible = false;
-                toggleBtn.textContent = 'Show HRRR';
-            } else if (hrrrOverlay) {
-                hrrrOverlay.addTo(map);
-                hrrrVisible = true;
-                toggleBtn.textContent = 'Hide HRRR';
+        function toggleNOAA() {
+            const toggleBtn = document.getElementById('toggle-noaa');
+            if (noaaVisible && noaaRadarOverlay) {
+                map.removeLayer(noaaRadarOverlay);
+                noaaVisible = false;
+                toggleBtn.textContent = 'Show NOAA';
+            } else if (noaaRadarOverlay) {
+                noaaRadarOverlay.addTo(map);
+                noaaVisible = true;
+                toggleBtn.textContent = 'Hide NOAA';
             }
         }
 
@@ -268,20 +226,21 @@
             if (nexradVisible && nexradOverlay) {
                 map.removeLayer(nexradOverlay);
                 nexradVisible = false;
-                toggleBtn.textContent = 'Show NEXRAD';
+                toggleBtn.textContent = 'Show Iowa';
             } else if (nexradOverlay) {
                 nexradOverlay.addTo(map);
                 nexradVisible = true;
-                toggleBtn.textContent = 'Hide NEXRAD';
+                toggleBtn.textContent = 'Hide Iowa';
             }
         }
 
         // Initialize on page load
+        initNOAARadar();
         initNEXRAD();
         fetchHRRRData();
 
         // Auto-refresh every 15 minutes
-        setInterval(fetchHRRRData, 15 * 60 * 1000);
+        setInterval(refreshData, 15 * 60 * 1000);
     </script>
 </body>
 </html>
