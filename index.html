@@ -125,6 +125,7 @@
         let nexradOverlay = null;
         let hrrrOverlay = null;
         let hrrrOverlayDateline = null;  // For Alaska west of 180°
+        let hrrrGridBoundary = null;  // HRRR Alaska grid boundary polygon
         let nexradVisible = true;
         let hrrrVisible = true;
 
@@ -346,6 +347,34 @@
             document.getElementById('nexrad-status').innerHTML = '<span style="color: green;">Active</span>';
         }
 
+        // Load and display HRRR Alaska grid boundary polygon
+        async function loadGridBoundary() {
+            try {
+                const response = await fetch('hrrr-grid-boundary.json');
+                const data = await response.json();
+
+                // Convert boundary polygon to Leaflet format
+                const boundaryCoords = data.boundary_polygon.map(p => [p.lat, p.lon]);
+
+                // Create polygon with green stroke (matching Alaska_HRRR_Leaflet_Alignment)
+                hrrrGridBoundary = L.polygon(boundaryCoords, {
+                    color: '#00ff00',  // Bright green for grid boundary
+                    weight: 4,         // Thicker line
+                    fillOpacity: 0,    // Transparent fill
+                    interactive: false,
+                    opacity: 1.0       // Full opacity
+                });
+
+                if (hrrrVisible) {
+                    hrrrGridBoundary.addTo(map);
+                }
+
+                console.log('✓ Grid boundary polygon loaded (green, solid) - ' + boundaryCoords.length + ' points');
+            } catch (error) {
+                console.error('Error loading grid boundary:', error);
+            }
+        }
+
         function refreshData() {
             initHRRRAlaska();
         }
@@ -354,10 +383,12 @@
             const toggleBtn = document.getElementById('toggle-hrrr');
             if (hrrrVisible) {
                 if (hrrrOverlay) map.removeLayer(hrrrOverlay);
+                if (hrrrGridBoundary) map.removeLayer(hrrrGridBoundary);
                 hrrrVisible = false;
                 toggleBtn.textContent = 'Show HRRR';
             } else {
                 if (hrrrOverlay) hrrrOverlay.addTo(map);
+                if (hrrrGridBoundary) hrrrGridBoundary.addTo(map);
                 hrrrVisible = true;
                 toggleBtn.textContent = 'Hide HRRR';
             }
@@ -379,6 +410,7 @@
         // Initialize on page load
         initNEXRAD();
         initHRRRAlaska();
+        loadGridBoundary();
 
         // Auto-refresh HRRR every 3 hours (when new runs are available)
         setInterval(refreshData, 3 * 60 * 60 * 1000);
