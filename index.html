@@ -203,18 +203,18 @@
                 const encodedColormap = encodeURIComponent(JSON.stringify(colormap));
 
                 // Alaska bounds (min_lon, min_lat, max_lon, max_lat)
-                // Two separate images - each in their exact same position
+                // Fetch two separate images and combine into single canvas overlay
 
                 // Main Alaska: -180°W to -130°W (east side, includes most of Alaska)
                 const bboxMain = '-180.0,51.0,-130.0,71.5';
                 const hrrrUrlMain = `https://raster.eoapi.dev/external/bbox/${bboxMain}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857`;
-                const boundsMain = [[51.0, -180.0], [71.5, -130.0]];
 
                 // Dateline crossing: 170°E to 180°E (westernmost Aleutian Islands - Attu, Shemya, etc.)
-                // For Leaflet display, convert to negative coordinates to place LEFT of Alaska
                 const bboxDateline = '170.0,51.0,180.0,71.5';
                 const hrrrUrlDateline = `https://raster.eoapi.dev/external/bbox/${bboxDateline}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857`;
-                const boundsDateline = [[51.0, -190.0], [71.5, -180.0]];  // 170°E-180°E = -190°W to -180°W in Leaflet
+
+                // Combined bounds covering both images: -190°W to -130°W
+                const boundsCombined = [[51.0, -190.0], [71.5, -130.0]];
 
                 // Remove old overlays
                 if (hrrrOverlay) {
@@ -224,75 +224,103 @@
                     map.removeLayer(hrrrOverlayDateline);
                 }
 
-                // Create main Alaska overlay
-                hrrrOverlay = L.imageOverlay(hrrrUrlMain, boundsMain, {
-                    opacity: 0.7,
-                    attribution: 'NOAA HRRR Alaska via TiTiler',
-                    className: 'hrrr-debug-border'
-                });
+                // Fetch both images and combine them
+                const imgMain = new Image();
+                const imgDateline = new Image();
+                imgMain.crossOrigin = 'anonymous';
+                imgDateline.crossOrigin = 'anonymous';
 
-                // Create dateline crossing overlay
-                hrrrOverlayDateline = L.imageOverlay(hrrrUrlDateline, boundsDateline, {
-                    opacity: 0.7,
-                    attribution: 'NOAA HRRR Alaska via TiTiler',
-                    className: 'hrrr-debug-border'
-                });
+                let mainImageLoaded = false;
+                let datelineImageLoaded = false;
 
-                if (hrrrVisible) {
-                    hrrrOverlay.addTo(map);
-                    hrrrOverlayDateline.addTo(map);
+                function createCombinedOverlay() {
+                    if (!mainImageLoaded || !datelineImageLoaded) return;
+
+                    // Calculate canvas dimensions
+                    // Main image covers 50° longitude (-180 to -130)
+                    // Dateline image covers 10° longitude (-190 to -180)
+                    // Total span: 60° longitude (-190 to -130)
+                    const totalLonSpan = 60; // degrees
+                    const mainLonSpan = 50; // degrees
+                    const datelineLonSpan = 10; // degrees
+
+                    // Use main image height as reference
+                    const canvasHeight = imgMain.height;
+                    const canvasWidth = Math.round((totalLonSpan / mainLonSpan) * imgMain.width);
+
+                    // Create canvas
+                    const canvas = document.createElement('canvas');
+                    canvas.width = canvasWidth;
+                    canvas.height = canvasHeight;
+                    const ctx = canvas.getContext('2d');
+
+                    // Calculate positions
+                    const datelineWidth = Math.round((datelineLonSpan / totalLonSpan) * canvasWidth);
+                    const mainWidth = canvasWidth - datelineWidth;
+
+                    // Draw dateline image on the left
+                    ctx.drawImage(imgDateline, 0, 0, datelineWidth, canvasHeight);
+
+                    // Draw main image on the right
+                    ctx.drawImage(imgMain, datelineWidth, 0, mainWidth, canvasHeight);
+
+                    // Convert canvas to data URL
+                    const combinedImageUrl = canvas.toDataURL('image/png');
+
+                    // Create single combined overlay
+                    hrrrOverlay = L.imageOverlay(combinedImageUrl, boundsCombined, {
+                        opacity: 0.7,
+                        attribution: 'NOAA HRRR Alaska via TiTiler',
+                        className: 'hrrr-debug-border'
+                    });
+
+                    if (hrrrVisible) {
+                        hrrrOverlay.addTo(map);
+                    }
+
+                    console.log('HRRR Alaska: Combined image created and loaded!');
+                    hrrrStatusEl.innerHTML = `<span style="color: green;" title="${year}-${month}-${day} ${runHourStr}:00Z">Active</span>`;
+                    statusEl.innerHTML = `<span style="color: green;">HRRR Alaska loaded!</span><br><small>F000 composite reflectivity - ${year}-${month}-${day} ${runHourStr}:00Z</small>`;
                 }
 
+                imgMain.onload = function() {
+                    console.log('HRRR Alaska Main: Image loaded successfully!');
+                    mainImageLoaded = true;
+                    createCombinedOverlay();
+                };
+
+                imgDateline.onload = function() {
+                    console.log('HRRR Alaska Dateline: Image loaded successfully!');
+                    datelineImageLoaded = true;
+                    createCombinedOverlay();
+                };
+
+                imgMain.onerror = function() {
+                    console.error('HRRR Alaska Main: Image failed to load');
+                    hrrrStatusEl.innerHTML = `<span style="color: red;" title="Main image failed to load">Failed</span>`;
+                    statusEl.innerHTML = `<span style="color: red;">HRRR Alaska unavailable</span><br><small>Data may not be available yet. Using NEXRAD.</small>`;
+                };
+
+                imgDateline.onerror = function() {
+                    console.error('HRRR Alaska Dateline: Image failed to load');
+                    hrrrStatusEl.innerHTML = `<span style="color: red;" title="Dateline image failed to load">Failed</span>`;
+                    statusEl.innerHTML = `<span style="color: red;">HRRR Alaska unavailable</span><br><small>Data may not be available yet. Using NEXRAD.</small>`;
+                };
+
+                // Start loading images
+                imgMain.src = hrrrUrlMain;
+                imgDateline.src = hrrrUrlDateline;
+
                 hrrrStatusEl.innerHTML = `<span style="color: orange;" title="Loading ${year}-${month}-${day} ${runHourStr}:00Z">Loading...</span>`;
-                statusEl.innerHTML = `<span style="color: orange;">Loading HRRR Alaska...</span><br><small>Two images in same positions with debug borders</small>`;
+                statusEl.innerHTML = `<span style="color: orange;">Loading HRRR Alaska...</span><br><small>Combining images into single overlay</small>`;
 
                 console.log(`HRRR Alaska: Loading ${year}-${month}-${day} ${runHourStr}:00Z`);
                 console.log('GRIB2 URL:', gribUrl);
-                console.log('Main tile bbox:', bboxMain, '-> Leaflet bounds:', boundsMain);
+                console.log('Main tile bbox:', bboxMain);
+                console.log('Dateline tile bbox:', bboxDateline);
+                console.log('Combined bounds:', boundsCombined);
                 console.log('TiTiler Main URL:', hrrrUrlMain);
-                console.log('Dateline tile bbox:', bboxDateline, '-> Leaflet bounds:', boundsDateline);
                 console.log('TiTiler Dateline URL:', hrrrUrlDateline);
-
-                // Track loading status of both images
-                let mainLoaded = false;
-                let datelineLoaded = false;
-
-                function checkBothLoaded() {
-                    if (mainLoaded && datelineLoaded) {
-                        console.log('HRRR Alaska: Both images loaded successfully!');
-                        hrrrStatusEl.innerHTML = `<span style="color: green;" title="${year}-${month}-${day} ${runHourStr}:00Z">Active</span>`;
-                        statusEl.innerHTML = `<span style="color: green;">HRRR Alaska loaded!</span><br><small>F000 composite reflectivity - ${year}-${month}-${day} ${runHourStr}:00Z</small>`;
-                    }
-                }
-
-                // Add load/error detection for main image
-                hrrrOverlay.once('load', function() {
-                    console.log('HRRR Alaska Main: Image loaded successfully!');
-                    mainLoaded = true;
-                    checkBothLoaded();
-                });
-
-                hrrrOverlay.getElement()?.addEventListener('error', function(e) {
-                    console.error('HRRR Alaska Main: Image failed to load');
-                    console.error('Error details:', e);
-                    hrrrStatusEl.innerHTML = `<span style="color: red;" title="Main image failed to load">Failed</span>`;
-                    statusEl.innerHTML = `<span style="color: red;">HRRR Alaska unavailable</span><br><small>Data may not be available yet. Using NEXRAD.</small>`;
-                });
-
-                // Add load/error detection for dateline image
-                hrrrOverlayDateline.once('load', function() {
-                    console.log('HRRR Alaska Dateline: Image loaded successfully!');
-                    datelineLoaded = true;
-                    checkBothLoaded();
-                });
-
-                hrrrOverlayDateline.getElement()?.addEventListener('error', function(e) {
-                    console.error('HRRR Alaska Dateline: Image failed to load');
-                    console.error('Error details:', e);
-                    // Don't fail the whole thing if just dateline fails (it might be empty)
-                    datelineLoaded = true; // Count as "loaded" to not block main image status
-                    checkBothLoaded();
-                });
 
             } catch (error) {
                 console.error('Error loading HRRR Alaska:', error);
@@ -326,12 +354,10 @@
             const toggleBtn = document.getElementById('toggle-hrrr');
             if (hrrrVisible) {
                 if (hrrrOverlay) map.removeLayer(hrrrOverlay);
-                if (hrrrOverlayDateline) map.removeLayer(hrrrOverlayDateline);
                 hrrrVisible = false;
                 toggleBtn.textContent = 'Show HRRR';
             } else {
                 if (hrrrOverlay) hrrrOverlay.addTo(map);
-                if (hrrrOverlayDateline) hrrrOverlayDateline.addTo(map);
                 hrrrVisible = true;
                 toggleBtn.textContent = 'Hide HRRR';
             }
