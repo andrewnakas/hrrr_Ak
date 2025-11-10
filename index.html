@@ -191,11 +191,25 @@
                     hrrrOverlay.addTo(map);
                 }
 
-                hrrrStatusEl.innerHTML = `<span style="color: orange;" title="Attempting ${year}-${month}-${day} ${runHourStr}:00Z">Attempted</span>`;
+                hrrrStatusEl.innerHTML = `<span style="color: orange;" title="Attempting ${year}-${month}-${day} ${runHourStr}:00Z">Loading...</span>`;
+                statusEl.innerHTML = `<span style="color: orange;">Loading HRRR Alaska...</span><br><small>Attempting ${year}-${month}-${day} ${runHourStr}:00Z</small>`;
 
-                // Note: rapidrefresh.noaa.gov may not serve images reliably
-                // The overlay attempts to load but may fail silently
-                console.log(`HRRR Alaska: Attempting ${year}-${month}-${day} ${runHourStr}:00Z`);
+                console.log(`HRRR Alaska: Attempting to load from URL:`);
+                console.log(hrrrUrl);
+
+                // Add load/error detection for the image
+                hrrrOverlay.once('load', function() {
+                    console.log('HRRR Alaska: Image loaded successfully!');
+                    hrrrStatusEl.innerHTML = `<span style="color: green;" title="${year}-${month}-${day} ${runHourStr}:00Z">Active</span>`;
+                    statusEl.innerHTML = `<span style="color: green;">HRRR Alaska loaded!</span><br><small>F000 composite reflectivity - ${year}-${month}-${day} ${runHourStr}:00Z</small>`;
+                });
+
+                hrrrOverlay.getElement()?.addEventListener('error', function(e) {
+                    console.error('HRRR Alaska: Image failed to load');
+                    console.error('Error details:', e);
+                    hrrrStatusEl.innerHTML = `<span style="color: red;" title="Image failed to load from NOAA">Failed</span>`;
+                    statusEl.innerHTML = `<span style="color: red;">HRRR Alaska unavailable</span><br><small>NOAA service not responding. Using NEXRAD only.</small>`;
+                });
 
             } catch (error) {
                 console.error('Error loading HRRR Alaska:', error);
