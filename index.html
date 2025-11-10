@@ -204,11 +204,11 @@
                 const hrrrUrlMain = `https://raster.eoapi.dev/external/bbox/${bboxMain}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857`;
                 const boundsMain = [[51.0, -179.0], [71.5, -130.0]];
 
-                // Dateline crossing: 172°E to 180°E (westernmost Aleutian Islands)
+                // Dateline crossing: 165°E to 180°E (westernmost Aleutian Islands - Attu, Shemya, etc.)
                 // For Leaflet display, convert to negative coordinates to place LEFT of Alaska
-                const bboxDateline = '172.0,51.0,180.0,71.5';
+                const bboxDateline = '165.0,51.0,180.0,71.5';
                 const hrrrUrlDateline = `https://raster.eoapi.dev/external/bbox/${bboxDateline}.png?url=${encodedVrtUrl}&colormap=${encodedColormap}&dst_crs=epsg:3857`;
-                const boundsDateline = [[51.0, -188.0], [71.5, -180.0]];  // 172°E-180°E = -188°W to -180°W in Leaflet
+                const boundsDateline = [[51.0, -195.0], [71.5, -180.0]];  // 165°E-180°E = -195°W to -180°W in Leaflet
 
                 // Remove old overlays
                 if (hrrrOverlay) {
